@@ -21,7 +21,7 @@
 (function (global) {
     'use strict';
 
-    var VERSION = '1.1.0';
+    var VERSION = '1.1.1';
     var CFG = global.PDFRE_CONFIG = global.PDFRE_CONFIG || {};
 
     /* ==========================================================
@@ -173,7 +173,12 @@
         if (opts.headers) init.headers = opts.headers;
 
         return fetch(url, init).then(function (res) {
-            if (!res.ok) throw new Error('HTTP ' + res.status + ' — ' + (res.statusText || 'request failed'));
+            var ctype = res.headers.get('content-type') || 'unknown';
+            if (!res.ok) {
+                throw new Error('HTTP ' + res.status + ' ' + (res.statusText || '') +
+                    ' (content-type: ' + ctype + ')');
+            }
+            if (opts._info) { opts._info.status = res.status; opts._info.type = ctype; }
 
             var total = parseInt(res.headers.get('content-length') || '0', 10);
 
@@ -696,6 +701,10 @@
             return;
         }
 
+        try {
+            if (url) url = new URL(url, global.location.href).href;
+        } catch (e) { /* leave as given */ }
+
         if (!url && !o.proxyUrl) {
             this.fail('No document source was provided.',
                 'Set one of "src", "htmlUrl", "jsonUrl", "srcEnc" or "proxyUrl".');
@@ -719,6 +728,7 @@
         }
 
         var manifestBase = url;   // kept in this closure only, never on the instance
+        o._info = { status: 0, type: '', bytes: 0, kind: '' };
 
         fetchBytes(fetchUrl, o, function (got, total) {
             if (total) {
@@ -733,6 +743,8 @@
 
             var bytes = normalizeBytes(raw);
             var kind = (o.srcType && o.srcType !== 'auto') ? o.srcType : sniffKind(bytes);
+            o._info.bytes = bytes.length;
+            o._info.kind = kind;
 
             if (kind === 'pdf') {
                 self.setProgress(1, 'Preparing pages…');
@@ -750,12 +762,21 @@
             var detail = (err && err.message) || String(err);
             if (/failed to fetch|networkerror|load failed/i.test(detail)) {
                 msg = 'The file could not be fetched. The host may not allow cross-origin requests (CORS).';
-            } else if (/invalid pdf|missing pdf|unexpected/i.test(detail)) {
-                msg = 'The file was received but is not a valid PDF.';
-            } else if (/password/i.test(detail)) {
-                msg = 'This PDF is password protected.';
             } else if (/json/i.test(detail)) {
                 msg = 'The contents file was received but is not valid JSON.';
+            } else if (/password/i.test(detail)) {
+                msg = 'This PDF is password protected.';
+            } else if (/invalid pdf|missing pdf|unexpected/i.test(detail)) {
+                msg = 'The file was received but is not a valid PDF.';
+            } else if (/http 4\d\d|http 5\d\d/i.test(detail)) {
+                msg = 'The address did not return a file.';
+            }
+            var info = o._info || {};
+            if (info.status) {
+                detail += '  ·  HTTP ' + info.status +
+                    (info.type ? ', ' + info.type : '') +
+                    (info.bytes ? ', ' + fmtBytes(info.bytes) : '') +
+                    (info.kind ? ', read as ' + info.kind : '');
             }
             self.fail(msg, detail);
             if (typeof self.opts.onError === 'function') self.opts.onError(err);
@@ -1775,7 +1796,7 @@
 
         var resolve = function (u) {
             var abs = u;
-            try { if (base) abs = new URL(u, base).href; } catch (e) { }
+            try { abs = new URL(u, base || global.location.href).href; } catch (e) { }
             if (!o.proxyUrl) return abs;
             return o.proxyUrl.indexOf('{src}') > -1
                 ? o.proxyUrl.replace('{src}', encodeURIComponent(abs))
@@ -1877,41 +1898,57 @@
             function done() {
                 if (settled || self.destroyed) return;
                 settled = true;
-                self.initFrame();
+                try {
+                    self.initFrame();
+                } catch (e) {
+                    self.fail('The notes were loaded but could not be displayed.',
+                        (e && e.message) || String(e));
+                }
                 resolve();
             }
 
-            frame.addEventListener('load', function () {
-                if (frameHasContent()) done();
-            });
-
-            function frameHasContent() {
+            /* The frame is only safe to read once parsing has finished.
+               Checking for "any children" is not enough — the parser streams,
+               so an early read sees a partial document and loses most of the
+               chapters. readyState leaves "loading" exactly when the DOM is
+               complete, and unlike the load event it does not wait on fonts. */
+            function frameReady() {
                 try {
                     var d = frame.contentDocument;
-                    return !!(d && d.body && d.body.children.length);
+                    return !!(d && d.body && d.body.children.length &&
+                        d.readyState !== 'loading');
                 } catch (e) { return false; }
             }
 
+            frame.addEventListener('load', function () {
+                if (frameReady()) done();
+            });
+
             frame.srcdoc = srcdoc;
 
-            /* Poll for the frame's DOM rather than waiting on `load`, which
-               also waits for webfonts and images. If srcdoc did not take
-               after a couple of seconds, write the document in directly. */
             var tries = 0;
             (function poll() {
                 if (settled || self.destroyed) return;
-                if (frameHasContent()) return done();
+                if (frameReady()) return done();
 
-                if (++tries === 60) {
+                /* srcdoc never took — write the document in directly */
+                if (tries === 120) {
                     try {
                         var d = frame.contentDocument;
                         d.open();
                         d.write(srcdoc);
                         d.close();
-                    } catch (e) { /* fall through to the timeout below */ }
+                    } catch (e) { /* handled by the timeout below */ }
                 }
-                if (tries < 120) setTimeout(poll, 25);
-                else done();
+
+                if (++tries < 480) return setTimeout(poll, 25);
+
+                if (frameReady()) return done();
+                self.fail('The notes could not be displayed.',
+                    'The viewer frame did not finish loading. If your site sets a ' +
+                    'Content-Security-Policy, it must allow frame-src \'self\' data:.');
+                settled = true;
+                resolve();
             })();
         });
     };
@@ -1935,16 +1972,46 @@
         var sel = o.sectionSelector || DEFAULT_SECTION_SEL;
         var nodes = this.idoc.querySelectorAll(sel);
         if (!nodes.length) nodes = this.idoc.querySelectorAll('h1, h2');
-        if (!nodes.length && this.idoc.body) nodes = [this.idoc.body.firstElementChild].filter(Boolean);
+
+        /* A sign-in wall, a 404 page or a Drive permission page is still valid
+           HTML, so it mounts happily and shows nothing useful. Catch that
+           before falling back to treating the whole file as one section. */
+        var textLen = (this.idoc.body.textContent || '').replace(/\s+/g, ' ').trim().length;
+        if (!nodes.length && textLen < 220) {
+            this.fail('That address returned a web page, not a notes file.',
+                'Only ' + textLen + ' characters of text were found. If the file is on ' +
+                'Google Drive, Dropbox or a login-protected host, use a direct download ' +
+                'link or the proxy in proxy/cloudflare-worker.js.');
+            return;
+        }
+
+        if (!nodes.length && this.idoc.body) {
+            nodes = [this.idoc.body.firstElementChild].filter(Boolean);
+        }
 
         this.sections = Array.prototype.slice.call(nodes);
         this.numPages = Math.max(1, this.sections.length);
         this.pageTotal.textContent = this.numPages;
         this.pageInput.max = this.numPages;
 
-        /* natural content width, measured before any zoom is applied */
-        var probe = this.idoc.querySelector('.sheet, #book, .pdfre-part > *') || this.idoc.body;
-        this.htmlNaturalWidth = (probe && probe.offsetWidth) || 794;
+        /* Natural content width, measured before any zoom is applied.
+           These are tried in order — querySelector with a selector list
+           returns whichever matches first in tree order, which would pick
+           the full-width wrapper instead of the fixed-width page sheet. */
+        var probeSels = ['.sheet', '.page', '.paper', '.a4', '#book', 'article', 'main'];
+        var probe = null;
+        for (var pi = 0; pi < probeSels.length; pi++) {
+            probe = this.idoc.querySelector(probeSels[pi]);
+            if (probe) break;
+        }
+
+        var frameW = this.frameWrap.clientWidth || this.shell.clientWidth || 0;
+        var natural = probe ? probe.offsetWidth : 0;
+
+        /* If the content simply fills whatever width it is given there is no
+           fixed page to fit, so "fit to width" means 100%. */
+        if (!natural || (frameW && Math.abs(natural - frameW) < 8)) natural = 0;
+        this.htmlNaturalWidth = natural;
 
         /* forward activity and input from inside the frame */
         var pass = { passive: true };
@@ -1992,7 +2059,9 @@
 
         var z;
         if (this.fitMode === 'fit-width' || this.fitMode === 'fit-page') {
-            z = narrow ? 1 : (availW - 40) / (this.htmlNaturalWidth || 794);
+            z = (narrow || !this.htmlNaturalWidth)
+                ? 1
+                : (availW - 40) / this.htmlNaturalWidth;
         } else {
             z = this.scale;
         }
