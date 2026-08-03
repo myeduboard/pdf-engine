@@ -62,7 +62,47 @@
 
 
 <!-- ────────────────────────────────────────────────────────
-  METHOD 3 — JavaScript API, full settings
+  METHOD 3 — HTML notes instead of a PDF
+  Point it at a self-contained .html notes file. The engine detects the
+  type from the bytes, strips anything executable, keeps the styling,
+  and turns each top-level <section> into a page with a contents list.
+──────────────────────────────────────────────────────────── -->
+<div data-pdfre
+     data-pdfre-src="https://cdn.jsdelivr.net/gh/YOUR-USER/YOUR-REPO@TAG/notes/microbiology.html"
+     data-pdfre-title="Veterinary Microbiology"
+     data-pdfre-subtitle="ICAR eCourses · 20 chapters"
+     data-pdfre-height="80vh"
+     data-pdfre-theme="dark"></div>
+
+<!-- If your notes use a different wrapper for each chapter, say so:
+     data-pdfre-sections=".chapter"
+     Force the type if auto-detection guesses wrong:
+     data-pdfre-type="html"                                        -->
+
+
+<!-- ────────────────────────────────────────────────────────
+  METHOD 4 — Several notes files merged from a JSON contents file
+  The JSON lists the parts; the engine fetches and stitches them into
+  one continuous book with a shared contents sidebar.
+
+  contents.json:
+  {
+    "title": "Veterinary Microbiology — Complete",
+    "subtitle": "ICAR eCourses",
+    "documents": [
+      { "title": "Part 1 — General",    "url": "part-1.html" },
+      { "title": "Part 2 — Systematic", "url": "part-2.html" }
+    ]
+  }
+  Relative URLs resolve against the contents file itself.
+──────────────────────────────────────────────────────────── -->
+<div data-pdfre
+     data-pdfre-json="https://cdn.jsdelivr.net/gh/YOUR-USER/YOUR-REPO@TAG/notes/contents.json"
+     data-pdfre-height="80vh"></div>
+
+
+<!-- ────────────────────────────────────────────────────────
+  METHOD 5 — JavaScript API, full settings
   Best for: when you want callbacks, custom heights, or programmatic
   control (goTo, setZoom, toggleFullscreen, destroy).
 ──────────────────────────────────────────────────────────── -->
@@ -74,8 +114,12 @@ document.addEventListener('DOMContentLoaded', function () {
 
     /* ---- source (pick ONE) ---- */
     src:    'https://cdn.jsdelivr.net/gh/YOUR-USER/YOUR-REPO@TAG/file.pdf',
+    // src:    '.../notes.html',       // HTML notes — detected automatically
+    // src:    '.../contents.json',    // JSON contents file — merged notes
     // srcEnc: 'p1.xxxxxx.xxxxxxxx',   // token from the link encoder
     // key:    'my-key',
+    // srcType: 'auto',                // 'auto' | 'pdf' | 'html' | 'manifest'
+    // sectionSelector: '',            // what counts as a page in HTML notes
 
     /* ---- presentation ---- */
     title:    'Physics — Unit 4',
@@ -117,7 +161,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
 
 <!-- ────────────────────────────────────────────────────────
-  METHOD 4 — Proxy mode (the only genuinely leak-proof option)
+  METHOD 6 — Proxy mode (the only genuinely leak-proof option)
   The real file address lives on your Cloudflare Worker or Apps Script,
   never in the page. Leave src and srcEnc empty.
   See proxy/cloudflare-worker.js and proxy/google-apps-script.gs.
@@ -130,7 +174,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
 
 <!-- ────────────────────────────────────────────────────────
-  METHOD 5 — Several documents on one page
+  METHOD 7 — Several documents on one page
   Each block is independent. Give each one its own id if you use the
   JavaScript API; the markup method needs no ids at all.
 ──────────────────────────────────────────────────────────── -->
@@ -143,10 +187,14 @@ document.addEventListener('DOMContentLoaded', function () {
 
 
 <!-- ══════════════════════════════════════════════════════════
-  DATA ATTRIBUTE REFERENCE (Method 1, 2, 4, 5)
+  DATA ATTRIBUTE REFERENCE (markup methods)
   ══════════════════════════════════════════════════════════
   data-pdfre              required marker, no value
-  data-pdfre-src          plain PDF URL
+  data-pdfre-src          document URL — PDF, HTML notes, or JSON contents
+  data-pdfre-html         alias of src, for HTML notes
+  data-pdfre-json         alias of src, for a JSON contents file
+  data-pdfre-type         auto | pdf | html | manifest
+  data-pdfre-sections     CSS selector for chapters in HTML notes
   data-pdfre-enc          obfuscated token (use instead of src)
   data-pdfre-key          key the token was encoded with
   data-pdfre-proxy        proxy endpoint (use alone for full privacy)
@@ -174,7 +222,7 @@ document.addEventListener('DOMContentLoaded', function () {
   + / −                               zoom in / out
   0                                   fit to width
   F                                   fullscreen
-  R                                   rotate 90°
+  R                                   rotate 90° (PDF mode)
   Ctrl+F                              search
   Esc                                 close search or exit fullscreen
 ══════════════════════════════════════════════════════════ -->
