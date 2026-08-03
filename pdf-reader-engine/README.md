@@ -1,4 +1,4 @@
-# PDF Reader Engine v1.1
+# PDF Reader Engine v1.1.1
 
 A secure, embeddable document viewer for Blogger, WordPress and plain
 HTML. Host once on GitHub → serve anywhere via jsDelivr CDN.
@@ -22,6 +22,7 @@ pdf-reader-engine/
 ├── demo.html                    ← local test page
 ├── examples/
 │   ├── contents.json            ← sample contents file for merged notes
+│   ├── sample.pdf
 │   └── veterinary-microbiology-part-1.html
 ├── tools/
 │   └── link-encoder.html        ← turn a PDF URL into a token + snippet
@@ -327,6 +328,18 @@ They also stay put while the search panel is open, by design.
 **HTML notes show one section only** — the file's top-level elements do
 not match the default selector. Set `sectionSelector` to whatever wraps
 each chapter, for example `'.chapter'` or `'#book > section'`.
+
+**"That address returned a web page, not a notes file"** — the host sent
+a sign-in wall, a 404 page, or a share-link landing page instead of the
+file. Google Drive and Dropbox share links do this. Use a direct download
+link, or route it through `proxy/cloudflare-worker.js`.
+
+**Reading the error panel** — the small grey line under the message
+carries the diagnostics: HTTP status, content type, size, and what the
+engine decided the file was. `HTTP 200, text/html, 134 KB, read as html`
+means the fetch worked and it was treated as notes; `Failed to fetch`
+with nothing after it means the request never completed, which is almost
+always CORS.
 
 **HTML notes look unstyled** — the styling lived in an external
 stylesheet that is not reachable. Inline the CSS into a `<style>` block
