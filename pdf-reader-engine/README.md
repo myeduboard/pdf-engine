@@ -50,8 +50,9 @@ pdf-reader-engine/
 - **Page thumbnails**, jump-to-page, zoom, fit-to-width / fit-to-page,
   90° rotation, pinch zoom, Ctrl+wheel zoom, full keyboard control.
 - **Notes keep their authored layout** — a fixed page sheet is never
-  reflowed to fit a phone. When it does not fit, the frame scrolls
-  sideways and can be dragged to pan.
+  reflowed to fit a phone. It is scaled down to fit the screen on load,
+  and once you zoom in the frame scrolls sideways and can be dragged to
+  pan.
 - **Search** across the document with result snippets and highlighting.
 - **No download button, no print button, no context menu, no text
   selection.** `Ctrl+P` and `Ctrl+S` are intercepted; a print attempt
@@ -137,11 +138,15 @@ What happens to the file:
   the frame — a 210mm sheet on a phone, or anything you have zoomed into
   — the frame scrolls sideways rather than reflowing the text. Drag to
   pan, or use the scrollbar, `Shift`+wheel, or `Shift`+`←`/`→`.
-- Zoom scales the whole document. Fit-to-width will not shrink below
-  `htmlFitMinZoom` (0.85 by default): an A4 sheet fitted into a 390px
-  phone lands at 0.44×, which is 7px type, so the floor holds it at a
-  readable size and lets the overflow scroll instead. Set it to `0` to
-  always fit the full width, or `1` to never shrink.
+- On load the notes are shrunk to fit the width available, so a 210mm
+  sheet opens fully visible on a phone rather than cropped — about 0.44×
+  on a 390px screen. Sideways scrolling is then there for when you zoom
+  in. The fit is taken again as late fonts and images settle, unless you
+  have already picked a zoom yourself.
+- `htmlFitMinZoom` puts a floor under that, if you would rather the notes
+  stayed legible on a phone and panned sideways from the start. `0.85`
+  keeps type readable on a 390px screen at the cost of ~285px of pan.
+  Off (`0`) by default.
 - Set `htmlReflow: true` to restore the old behaviour, where a narrow
   screen released the fixed sheet width and let the text reflow.
 - Search highlights matches in place with `<mark>` and lists them by
@@ -251,7 +256,7 @@ heuristic and can misfire on unusual window setups.
 | `srcType` | `'auto'` | `auto`, `pdf`, `html`, `manifest` |
 | `sectionSelector` | `''` | What counts as a page in HTML notes |
 | `htmlReflow` | `false` | Let narrow screens reflow notes instead of scrolling sideways |
-| `htmlFitMinZoom` | `0.85` | Fit-to-width will not shrink notes below this; `0` disables |
+| `htmlFitMinZoom` | `0` | Floor under fit-to-width for notes; `0` = shrink as far as needed |
 | `srcEnc` | `''` | Obfuscated token from the link encoder |
 | `key` | `''` | Key the token was encoded with |
 | `proxyUrl` | `''` | Proxy endpoint; use alone for full privacy |
@@ -361,9 +366,11 @@ always CORS.
 scrolls horizontally. Drag to pan, or use `Shift`+wheel. If you would
 rather the text reflowed to the screen, set `htmlReflow: true`.
 
-**Notes are too small on a phone** — raise `htmlFitMinZoom` (try `1`,
-which never shrinks the sheet) and pan sideways, or set `htmlReflow:
-true` to give up the fixed layout in exchange for full-width text.
+**Notes open too small on a phone** — that is the fit: the whole page
+width is being shown at once. Zoom in and pan, or set `htmlFitMinZoom`
+(try `0.85`) so it never shrinks below a readable size and starts out
+scrolling sideways instead. `htmlReflow: true` gives up the fixed layout
+altogether in exchange for full-width text.
 
 **HTML notes look unstyled** — the styling lived in an external
 stylesheet that is not reachable. Inline the CSS into a `<style>` block
