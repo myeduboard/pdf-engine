@@ -48,10 +48,21 @@
       <option value="fullscreen">Hide only in fullscreen</option>
       <option value="never">Always show controls</option>
     </select>
+    <select id="width" title="Simulate a narrower screen">
+      <option value="0">Full width</option>
+      <option value="360">360px — small phone</option>
+      <option value="390">390px — phone</option>
+      <option value="430">430px — large phone</option>
+      <option value="768">768px — tablet</option>
+    </select>
+    <select id="layout" title="How HTML notes handle a narrow frame">
+      <option value="scroll">Keep layout, scroll sideways</option>
+      <option value="reflow">Reflow text to the frame</option>
+    </select>
     <button id="open">Open</button>
   </div>
 
-  <div id="viewer"></div>
+  <div id="stage"><div id="viewer"></div></div>
 </div>
 
 <script src="pdfre.js"></script>
@@ -60,12 +71,22 @@ var reader = null;
 
 function open_() {
   if (reader) reader.destroy();
+
+  /* the stage is what gets narrowed, so the reader sees a genuinely
+     small frame rather than a scaled one */
+  var w = document.getElementById('width').value;
+  var stage = document.getElementById('stage');
+  stage.style.width = w === '0' ? '' : w + 'px';
+  stage.style.margin = w === '0' ? '' : '0 auto';
+  stage.style.outline = w === '0' ? '' : '1px dashed rgba(255,255,255,.2)';
+
   reader = window.initPdfReader('viewer', {
     src: document.getElementById('url').value.trim(),
     title: 'Document',
     subtitle: 'PDF Reader Engine v' + window.PDFRE.version,
     theme: document.getElementById('theme').value,
     autohide: document.getElementById('hide').value,
+    htmlReflow: document.getElementById('layout').value === 'reflow',
     height: '78vh',
     watermark: '',
     onReady: function (i) { console.log('ready —', i.pages, 'pages'); },
@@ -77,6 +98,8 @@ document.getElementById('preset').addEventListener('change', function () {
   document.getElementById('url').value = this.value;
   open_();
 });
+document.getElementById('width').addEventListener('change', open_);
+document.getElementById('layout').addEventListener('change', open_);
 document.getElementById('open').addEventListener('click', open_);
 document.getElementById('url').addEventListener('keydown', function (e) {
   if (e.key === 'Enter') open_();
