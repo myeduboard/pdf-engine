@@ -77,7 +77,14 @@
 <!-- If your notes use a different wrapper for each chapter, say so:
      data-pdfre-sections=".chapter"
      Force the type if auto-detection guesses wrong:
-     data-pdfre-type="html"                                        -->
+     data-pdfre-type="html"
+
+     Notes keep the width they were authored at and scroll sideways when
+     they do not fit. Two knobs for that:
+     data-pdfre-fitmin="0.85"   fit-to-width will not shrink below this.
+                                0 = always fit the width, 1 = never shrink.
+     data-pdfre-reflow="true"   give up the fixed layout on narrow screens
+                                and let the text reflow instead.          -->
 
 
 <!-- ────────────────────────────────────────────────────────
@@ -120,6 +127,10 @@ document.addEventListener('DOMContentLoaded', function () {
     // key:    'my-key',
     // srcType: 'auto',                // 'auto' | 'pdf' | 'html' | 'manifest'
     // sectionSelector: '',            // what counts as a page in HTML notes
+
+    /* ---- HTML notes layout ---- */
+    // htmlReflow:     false,          // true = reflow text on narrow screens
+    // htmlFitMinZoom: 0.85,           // fit-width floor; 0 = always fit
 
     /* ---- presentation ---- */
     title:    'Physics — Unit 4',
@@ -195,6 +206,8 @@ document.addEventListener('DOMContentLoaded', function () {
   data-pdfre-json         alias of src, for a JSON contents file
   data-pdfre-type         auto | pdf | html | manifest
   data-pdfre-sections     CSS selector for chapters in HTML notes
+  data-pdfre-fitmin       fit-to-width floor for notes (default 0.85)
+  data-pdfre-reflow       "true" to reflow notes instead of scrolling
   data-pdfre-enc          obfuscated token (use instead of src)
   data-pdfre-key          key the token was encoded with
   data-pdfre-proxy        proxy endpoint (use alone for full privacy)
