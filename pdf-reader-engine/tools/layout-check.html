@@ -25,8 +25,10 @@
 <div class="wrap">
   <h1>HTML notes — layout check</h1>
   <p class="lede">Mounts the sample notes in a 390px-wide frame and measures what the
-  engine actually did. Serve this folder over http (<code>python3 -m http.server</code>)
-  — opening the file directly will block the fetch.</p>
+  engine actually did: the sheet should keep its authored width, be shrunk to fit on
+  load, and gain a scrollable, pannable overflow once zoomed in. Serve this folder over
+  http (<code>python3 -m http.server</code>) — opening the file directly will block the
+  fetch.</p>
 
   <table id="out"><thead><tr><th>Check</th><th>Expected</th><th>Measured</th><th>Result</th></tr></thead>
   <tbody><tr><td colspan="4" class="note">Loading…</td></tr></tbody></table>
@@ -64,44 +66,55 @@ function run() {
   rows.push(row('Sheet keeps its authored width', '~794px (210mm)',
     Math.round(sheetW) + 'px', Math.abs(sheetW - 794) < 12));
 
-  // 2. the frame can scroll sideways
-  var canScrollX = de.scrollWidth - win.innerWidth > 4;
-  rows.push(row('Horizontal scroll available at 390px', 'yes',
-    canScrollX ? 'yes (' + (de.scrollWidth - win.innerWidth) + 'px)' : 'no', canScrollX));
+  // 2. it was shrunk to fit rather than cropped
+  var z = reader.getState().zoom;
+  var wantZ = (390 - 40) / 794;
+  rows.push(row('Shrunk to fit the 390px frame on load', wantZ.toFixed(2) + 'x',
+    z.toFixed(2) + 'x', Math.abs(z - wantZ) < 0.06));
 
-  // 3. nothing is clipped off the left edge
+  // 3. nothing overflows at the fitted zoom
+  var overflow = de.scrollWidth - win.innerWidth;
+  rows.push(row('No sideways scroll needed at the fit', '<= 4px',
+    overflow + 'px', overflow <= 4));
+
+  // 4. nothing is clipped off the left edge
   var left = sheet.getBoundingClientRect().left + win.scrollX;
   rows.push(row('Left edge reachable (not cut off)', '>= 0',
     Math.round(left) + 'px', left >= -1));
 
-  // 4. the whole sheet is reachable by scrolling
-  var reach = de.scrollWidth >= Math.round(sheet.getBoundingClientRect().width) - 2;
-  rows.push(row('Full sheet width inside scroll range', 'yes',
-    de.scrollWidth + 'px scrollable', reach));
-
-  // 5. zoom actually changes the painted size
-  var before = sheet.getBoundingClientRect().width;
-  reader.setZoom(reader.getState().zoom * 1.5);
-  var after = sheet.getBoundingClientRect().width;
-  rows.push(row('Zoom scales the document', '1.5x wider',
-    (after / before).toFixed(2) + 'x', Math.abs(after / before - 1.5) < 0.08));
-
-  // 6. zooming in extends the scrollable width
-  var grew = de.scrollWidth - win.innerWidth > 4;
-  rows.push(row('Zoomed-in overflow is scrollable', 'yes',
-    grew ? 'yes (' + (de.scrollWidth - win.innerWidth) + 'px)' : 'no', grew));
-
-  // 7. pan affordance flagged
-  rows.push(row('Frame marked pannable', 'pdfre-panx',
-    de.className || '(none)', /pdfre-panx/.test(de.className)));
-
-  // 8. no reflow rules applied by default
+  // 6. no reflow rules applied by default
   rows.push(row('No reflow override on the sheet', 'not applied',
     /pdfre-reflow/.test(de.className) ? 'applied' : 'not applied',
     !/pdfre-reflow/.test(de.className)));
 
-  reader.setZoom('fit-width');
-  document.querySelector('#out tbody').innerHTML = rows.join('');
+  // the remaining checks are about the zoomed-in state. The engine flags
+  // overflow on the frame after the layout has settled, so give it one.
+  var before = sheet.getBoundingClientRect().width;
+  reader.setZoom(reader.getState().zoom * 2.5);
+
+  setTimeout(function () {
+    // 7. zoom actually changes the painted size
+    var after = sheet.getBoundingClientRect().width;
+    rows.push(row('Zoom scales the document', '2.5x wider',
+      (after / before).toFixed(2) + 'x', Math.abs(after / before - 2.5) < 0.12));
+
+    // 8. zooming in extends the scrollable width
+    var grew = de.scrollWidth - win.innerWidth > 4;
+    rows.push(row('Zoomed-in overflow is scrollable', 'yes',
+      grew ? 'yes (' + (de.scrollWidth - win.innerWidth) + 'px)' : 'no', grew));
+
+    // 9. the sheet is fully reachable once zoomed
+    var reachZ = de.scrollWidth >= Math.round(after) - 2;
+    rows.push(row('Whole zoomed sheet inside scroll range', 'yes',
+      de.scrollWidth + 'px scrollable', reachZ));
+
+    // 10. pan affordance flagged
+    rows.push(row('Frame marked pannable when overflowing', 'pdfre-panx',
+      de.className || '(none)', /pdfre-panx/.test(de.className)));
+
+    reader.setZoom('fit-width');
+    document.querySelector('#out tbody').innerHTML = rows.join('');
+  }, 200);
 }
 </script>
 </body>
