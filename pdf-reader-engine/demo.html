@@ -29,11 +29,16 @@
 <body>
 <div class="wrap">
   <h1>PDF Reader Engine</h1>
-  <p class="lede">Paste any CORS-enabled PDF URL and open it. Serve this folder over http (<code>python3 -m http.server</code>) rather than opening the file directly, or the browser will block the fetch.</p>
+  <p class="lede">Paste any CORS-enabled PDF, HTML notes, or JSON contents URL and open it. Serve this folder over http (<code>python3 -m http.server</code>) rather than opening the file directly, or the browser will block the fetch.</p>
 
   <div class="bar">
     <input id="url" type="text" spellcheck="false"
-           value="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/web/compressed.tracemonkey-pldi-09.pdf">
+           value="examples/veterinary-microbiology-part-1.html">
+    <select id="preset">
+      <option value="examples/veterinary-microbiology-part-1.html">HTML notes</option>
+      <option value="examples/contents.json">JSON contents file</option>
+      <option value="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/web/compressed.tracemonkey-pldi-09.pdf">PDF</option>
+    </select>
     <select id="theme">
       <option value="dark">Dark</option>
       <option value="light">Light</option>
@@ -57,7 +62,7 @@ function open_() {
   if (reader) reader.destroy();
   reader = window.initPdfReader('viewer', {
     src: document.getElementById('url').value.trim(),
-    title: 'Demo document',
+    title: 'Document',
     subtitle: 'PDF Reader Engine v' + window.PDFRE.version,
     theme: document.getElementById('theme').value,
     autohide: document.getElementById('hide').value,
@@ -68,6 +73,10 @@ function open_() {
   });
 }
 
+document.getElementById('preset').addEventListener('change', function () {
+  document.getElementById('url').value = this.value;
+  open_();
+});
 document.getElementById('open').addEventListener('click', open_);
 document.getElementById('url').addEventListener('keydown', function (e) {
   if (e.key === 'Enter') open_();
