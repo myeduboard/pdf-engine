@@ -1,4 +1,4 @@
-# PDF Reader Engine v1.1.1
+# PDF Reader Engine v1.2.0
 
 A secure, embeddable document viewer for Blogger, WordPress and plain
 HTML. Host once on GitHub → serve anywhere via jsDelivr CDN.
@@ -25,7 +25,8 @@ pdf-reader-engine/
 │   ├── sample.pdf
 │   └── veterinary-microbiology-part-1.html
 ├── tools/
-│   └── link-encoder.html        ← turn a PDF URL into a token + snippet
+│   ├── link-encoder.html        ← turn a PDF URL into a token + snippet
+│   └── layout-check.html        ← measures HTML notes layout in a 390px frame
 ├── proxy/
 │   ├── cloudflare-worker.js     ← hides the source address completely
 │   └── google-apps-script.gs    ← same, for PDFs living in Google Drive
@@ -48,6 +49,9 @@ pdf-reader-engine/
   into one continuous book.
 - **Page thumbnails**, jump-to-page, zoom, fit-to-width / fit-to-page,
   90° rotation, pinch zoom, Ctrl+wheel zoom, full keyboard control.
+- **Notes keep their authored layout** — a fixed page sheet is never
+  reflowed to fit a phone. When it does not fit, the frame scrolls
+  sideways and can be dragged to pan.
 - **Search** across the document with result snippets and highlighting.
 - **No download button, no print button, no context menu, no text
   selection.** `Ctrl+P` and `Ctrl+S` are intercepted; a print attempt
@@ -66,18 +70,18 @@ pdf-reader-engine/
 ```bash
 git init
 git add .
-git commit -m "v1.1.0 — PDF and HTML notes"
+git commit -m "v1.2.0 — PDF and HTML notes"
 git remote add origin https://github.com/YOUR-USER/pdf-reader-engine.git
 git push -u origin main
-git tag v1.1.0
-git push origin v1.1.0
+git tag v1.2.0
+git push origin v1.2.0
 ```
 
 **2. CDN URLs** (live about ten minutes after tagging)
 
 ```
-https://cdn.jsdelivr.net/gh/YOUR-USER/pdf-reader-engine@1.1.0/pdfre.css
-https://cdn.jsdelivr.net/gh/YOUR-USER/pdf-reader-engine@1.1.0/pdfre.js
+https://cdn.jsdelivr.net/gh/YOUR-USER/pdf-reader-engine@1.2.0/pdfre.css
+https://cdn.jsdelivr.net/gh/YOUR-USER/pdf-reader-engine@1.2.0/pdfre.js
 ```
 
 > Always pin a version tag. Never use `@latest` in production.
@@ -87,8 +91,8 @@ https://cdn.jsdelivr.net/gh/YOUR-USER/pdf-reader-engine@1.1.0/pdfre.js
 Blogger: Theme → Edit HTML, just before `</head>`.
 
 ```html
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/YOUR-USER/pdf-reader-engine@1.1.0/pdfre.css">
-<script defer src="https://cdn.jsdelivr.net/gh/YOUR-USER/pdf-reader-engine@1.1.0/pdfre.js"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/YOUR-USER/pdf-reader-engine@1.2.0/pdfre.css">
+<script defer src="https://cdn.jsdelivr.net/gh/YOUR-USER/pdf-reader-engine@1.2.0/pdfre.js"></script>
 ```
 
 **4. Reader block — once per post**
@@ -129,8 +133,17 @@ What happens to the file:
   from each section's heading and kicker. If a file has no sections, the
   engine falls back to `h1`/`h2` headings. Override with
   `sectionSelector` if your markup differs.
-- Zoom scales the whole document; on narrow screens the fixed A4 sheet
-  width is released so text reflows to the phone instead of shrinking.
+- The notes keep the width they were authored at. If that is wider than
+  the frame — a 210mm sheet on a phone, or anything you have zoomed into
+  — the frame scrolls sideways rather than reflowing the text. Drag to
+  pan, or use the scrollbar, `Shift`+wheel, or `Shift`+`←`/`→`.
+- Zoom scales the whole document. Fit-to-width will not shrink below
+  `htmlFitMinZoom` (0.85 by default): an A4 sheet fitted into a 390px
+  phone lands at 0.44×, which is 7px type, so the floor holds it at a
+  readable size and lets the overflow scroll instead. Set it to `0` to
+  always fit the full width, or `1` to never shrink.
+- Set `htmlReflow: true` to restore the old behaviour, where a narrow
+  screen released the fixed sheet width and let the text reflow.
 - Search highlights matches in place with `<mark>` and lists them by
   section.
 - Selection, copy, right-click and printing are blocked exactly as in PDF
@@ -237,6 +250,8 @@ heuristic and can misfire on unusual window setups.
 | `htmlUrl` / `jsonUrl` | `''` | Aliases of `src`, for readability |
 | `srcType` | `'auto'` | `auto`, `pdf`, `html`, `manifest` |
 | `sectionSelector` | `''` | What counts as a page in HTML notes |
+| `htmlReflow` | `false` | Let narrow screens reflow notes instead of scrolling sideways |
+| `htmlFitMinZoom` | `0.85` | Fit-to-width will not shrink notes below this; `0` disables |
 | `srcEnc` | `''` | Obfuscated token from the link encoder |
 | `key` | `''` | Key the token was encoded with |
 | `proxyUrl` | `''` | Proxy endpoint; use alone for full privacy |
@@ -285,7 +300,8 @@ Globals: `PDFRE.encodeSrc`, `PDFRE.autoInit`, `PDFRE.instances`,
 
 ## Keyboard
 
-`↓ ↑ Space PgUp PgDn` scroll · `→ ←` page · `Home End` first/last ·
+`↓ ↑ Space PgUp PgDn` scroll · `→ ←` page · `Shift`+`→ ←` pan sideways ·
+`Home End` first/last ·
 `+ −` zoom · `0` fit width · `F` fullscreen · `R` rotate ·
 `Ctrl+F` search · `Esc` close search or exit fullscreen
 
@@ -341,6 +357,14 @@ means the fetch worked and it was treated as notes; `Failed to fetch`
 with nothing after it means the request never completed, which is almost
 always CORS.
 
+**HTML notes are cut off at the sides** — they are not; the frame
+scrolls horizontally. Drag to pan, or use `Shift`+wheel. If you would
+rather the text reflowed to the screen, set `htmlReflow: true`.
+
+**Notes are too small on a phone** — raise `htmlFitMinZoom` (try `1`,
+which never shrinks the sheet) and pan sideways, or set `htmlReflow:
+true` to give up the fixed layout in exchange for full-width text.
+
 **HTML notes look unstyled** — the styling lived in an external
 stylesheet that is not reachable. Inline the CSS into a `<style>` block
 in the notes file; self-contained files are what this mode expects.
@@ -348,7 +372,7 @@ in the notes file; self-contained files are what this mode expects.
 ## Updating the engine
 
 1. Edit `pdfre.css` / `pdfre.js`
-2. Commit and push a new tag (`v1.1.0`)
+2. Commit and push a new tag (`v1.2.0`)
 3. Update the version in your site's `<link>` and `<script>` URLs
 
 Old tags stay available on jsDelivr forever, so existing embeds never
