@@ -1,0 +1,732 @@
+/* ==============================================================
+   PDF Reader Engine v1 — Secure Embedded PDF Viewer
+   CSS — host this file on GitHub and serve via jsDelivr CDN:
+   https://cdn.jsdelivr.net/gh/YOUR-USER/pdf-reader-engine@VERSION/pdfre.css
+
+   All styles are scoped to .pdfre-root so nothing leaks into the
+   host theme (Blogger / WordPress / custom) and nothing leaks in.
+   ============================================================== */
+
+/* ──────────────────────────────────────────────────────────────
+   1. ROOT + RESET
+   ────────────────────────────────────────────────────────────── */
+.pdfre-root {
+    /* surface */
+    --pr-bg:        #202124;
+    --pr-bg-2:      #292a2d;
+    --pr-bg-3:      #35363a;
+    --pr-chrome:    rgba(32, 33, 36, 0.92);
+    --pr-page:      #ffffff;
+    --pr-page-edge: rgba(0, 0, 0, 0.45);
+
+    /* ink */
+    --pr-fg:        #e8eaed;
+    --pr-fg-dim:    #9aa0a6;
+    --pr-fg-mute:   #5f6368;
+
+    /* accent */
+    --pr-accent:    #8ab4f8;
+    --pr-accent-dk: #4285f4;
+    --pr-danger:    #f28b82;
+    --pr-mark:      rgba(251, 188, 5, 0.42);
+
+    /* structure */
+    --pr-border:    rgba(255, 255, 255, 0.14);
+    --pr-hover:     rgba(255, 255, 255, 0.09);
+    --pr-active:    rgba(255, 255, 255, 0.16);
+    --pr-shadow:    0 1px 3px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.32);
+    --pr-radius:    10px;
+    --pr-pill:      999px;
+
+    --pr-font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+               "Helvetica Neue", Arial, sans-serif;
+    --pr-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+
+    --pr-bar-h:  52px;
+    --pr-ease:   cubic-bezier(.2, 0, 0, 1);
+
+    all: initial;
+    font-family: var(--pr-font);
+    display: block;
+    box-sizing: border-box;
+    width: 100%;
+    color: var(--pr-fg);
+    line-height: 1.5;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.pdfre-root *,
+.pdfre-root *::before,
+.pdfre-root *::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    font-family: inherit;
+}
+
+.pdfre-root ul,
+.pdfre-root ol,
+.pdfre-root li {
+    list-style: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: none !important;
+}
+
+.pdfre-root button,
+.pdfre-root input {
+    font: inherit;
+    color: inherit;
+    background: none;
+    border: 0;
+    outline: 0;
+}
+
+.pdfre-root button { cursor: pointer; }
+
+.pdfre-root svg {
+    display: block;
+    width: 20px;
+    height: 20px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.9;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    pointer-events: none;
+}
+
+/* Light theme override */
+.pdfre-root[data-theme="light"] {
+    --pr-bg:        #f1f3f4;
+    --pr-bg-2:      #ffffff;
+    --pr-bg-3:      #e8eaed;
+    --pr-chrome:    rgba(255, 255, 255, 0.94);
+    --pr-page-edge: rgba(0, 0, 0, 0.18);
+    --pr-fg:        #202124;
+    --pr-fg-dim:    #5f6368;
+    --pr-fg-mute:   #80868b;
+    --pr-accent:    #1a73e8;
+    --pr-accent-dk: #1967d2;
+    --pr-danger:    #c5221f;
+    --pr-border:    rgba(0, 0, 0, 0.12);
+    --pr-hover:     rgba(0, 0, 0, 0.06);
+    --pr-active:    rgba(0, 0, 0, 0.12);
+    --pr-shadow:    0 1px 3px rgba(0,0,0,.16), 0 8px 24px rgba(0,0,0,.12);
+}
+
+/* ──────────────────────────────────────────────────────────────
+   2. SHELL
+   ────────────────────────────────────────────────────────────── */
+.pdfre-shell {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    height: 720px;                 /* overridden inline by `height` option */
+    max-height: 100%;
+    background: var(--pr-bg);
+    border: 1px solid var(--pr-border);
+    border-radius: var(--pr-radius);
+    overflow: hidden;
+    contain: layout paint;
+}
+
+/* Native fullscreen + pseudo-fullscreen (iOS Safari fallback) */
+.pdfre-shell:fullscreen,
+.pdfre-shell:-webkit-full-screen {
+    height: 100% !important;
+    max-height: none;
+    border: 0;
+    border-radius: 0;
+}
+
+.pdfre-shell.is-pseudo-fs {
+    position: fixed;
+    inset: 0;
+    width: 100vw;
+    height: 100vh !important;
+    height: 100dvh !important;
+    max-height: none;
+    z-index: 2147483000;
+    border: 0;
+    border-radius: 0;
+}
+
+.pdfre-noscroll { overflow: hidden !important; }
+
+/* ──────────────────────────────────────────────────────────────
+   3. TOP BAR
+   ────────────────────────────────────────────────────────────── */
+.pdfre-topbar {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 30;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: var(--pr-bar-h);
+    padding: 0 8px 0 14px;
+    background: var(--pr-chrome);
+    -webkit-backdrop-filter: saturate(180%) blur(12px);
+    backdrop-filter: saturate(180%) blur(12px);
+    border-bottom: 1px solid var(--pr-border);
+    transition: transform .22s var(--pr-ease), opacity .22s var(--pr-ease);
+    will-change: transform;
+}
+
+.pdfre-title-wrap {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    min-width: 0;
+    flex: 1 1 auto;
+}
+
+.pdfre-title {
+    font-size: 14px;
+    font-weight: 600;
+    letter-spacing: .1px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.pdfre-subtitle {
+    font-size: 11.5px;
+    color: var(--pr-fg-dim);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.pdfre-topbar-actions {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    flex: 0 0 auto;
+}
+
+/* ──────────────────────────────────────────────────────────────
+   4. ICON BUTTONS
+   ────────────────────────────────────────────────────────────── */
+.pdfre-ico {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    color: var(--pr-fg);
+    transition: background .15s var(--pr-ease), color .15s var(--pr-ease),
+                opacity .15s var(--pr-ease);
+}
+
+.pdfre-ico:hover   { background: var(--pr-hover); }
+.pdfre-ico:active  { background: var(--pr-active); }
+.pdfre-ico.is-on   { background: var(--pr-active); color: var(--pr-accent); }
+.pdfre-ico:focus-visible {
+    outline: 2px solid var(--pr-accent);
+    outline-offset: 2px;
+}
+.pdfre-ico[disabled] {
+    opacity: .34;
+    cursor: default;
+    background: none;
+}
+
+/* tooltip */
+.pdfre-ico[data-tip]::after {
+    content: attr(data-tip);
+    position: absolute;
+    top: calc(100% + 8px);
+    left: 50%;
+    transform: translateX(-50%) scale(.9);
+    padding: 5px 9px;
+    font-size: 11.5px;
+    line-height: 1;
+    white-space: nowrap;
+    color: #fff;
+    background: #3c4043;
+    border-radius: 4px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .12s .35s var(--pr-ease), transform .12s .35s var(--pr-ease);
+    z-index: 5;
+}
+.pdfre-ico[data-tip]:hover::after { opacity: 1; transform: translateX(-50%) scale(1); }
+.pdfre-dock .pdfre-ico[data-tip]::after { top: auto; bottom: calc(100% + 8px); }
+
+/* ──────────────────────────────────────────────────────────────
+   5. BODY / SCROLLER / PAGES
+   ────────────────────────────────────────────────────────────── */
+.pdfre-body {
+    position: relative;
+    display: flex;
+    flex: 1 1 auto;
+    min-height: 0;
+}
+
+.pdfre-scroll {
+    position: relative;
+    flex: 1 1 auto;
+    overflow: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    scroll-behavior: auto;
+    padding: calc(var(--pr-bar-h) + 16px) 0 96px;
+    scrollbar-width: thin;
+    scrollbar-color: var(--pr-fg-mute) transparent;
+}
+.pdfre-scroll::-webkit-scrollbar { width: 12px; height: 12px; }
+.pdfre-scroll::-webkit-scrollbar-track { background: transparent; }
+.pdfre-scroll::-webkit-scrollbar-thumb {
+    background: var(--pr-fg-mute);
+    border: 3px solid transparent;
+    border-radius: 999px;
+    background-clip: content-box;
+}
+.pdfre-scroll::-webkit-scrollbar-thumb:hover { background: var(--pr-fg-dim); background-clip: content-box; }
+
+.pdfre-pages {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+    width: 100%;
+    padding: 0 16px;
+}
+
+.pdfre-page {
+    position: relative;
+    flex: 0 0 auto;
+    background: var(--pr-page);
+    box-shadow: 0 1px 3px var(--pr-page-edge), 0 4px 14px rgba(0,0,0,.22);
+    border-radius: 2px;
+    overflow: hidden;
+    /* screenshot / scrape deterrents */
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+    -webkit-user-drag: none;
+}
+
+.pdfre-page canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    -webkit-user-drag: none;
+}
+
+/* skeleton shimmer while a page is off-screen or still rasterising */
+.pdfre-page:not(.is-rendered)::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(100deg,
+        rgba(0,0,0,.03) 30%, rgba(0,0,0,.07) 50%, rgba(0,0,0,.03) 70%);
+    background-size: 220% 100%;
+    animation: pdfre-shimmer 1.4s linear infinite;
+}
+
+@keyframes pdfre-shimmer {
+    from { background-position: 140% 0; }
+    to   { background-position: -40% 0; }
+}
+
+.pdfre-page-num {
+    position: absolute;
+    right: 8px;
+    bottom: 8px;
+    padding: 2px 8px;
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    color: #fff;
+    background: rgba(0,0,0,.55);
+    border-radius: var(--pr-pill);
+    opacity: 0;
+    transition: opacity .2s var(--pr-ease);
+}
+.pdfre-page:hover .pdfre-page-num { opacity: 1; }
+
+/* search highlights */
+.pdfre-hl {
+    position: absolute;
+    background: var(--pr-mark);
+    border-radius: 2px;
+    pointer-events: none;
+    mix-blend-mode: multiply;
+}
+.pdfre-hl.is-current { background: rgba(255, 112, 67, .5); }
+
+/* ──────────────────────────────────────────────────────────────
+   6. THUMBNAIL SIDEBAR
+   ────────────────────────────────────────────────────────────── */
+.pdfre-sidebar {
+    flex: 0 0 0;
+    width: 0;
+    overflow: hidden;
+    background: var(--pr-bg-2);
+    border-right: 1px solid var(--pr-border);
+    transition: width .24s var(--pr-ease), flex-basis .24s var(--pr-ease);
+}
+.pdfre-shell.is-sidebar .pdfre-sidebar { flex-basis: 194px; width: 194px; }
+
+.pdfre-thumbs {
+    height: 100%;
+    overflow-y: auto;
+    padding: calc(var(--pr-bar-h) + 12px) 12px 24px;
+    scrollbar-width: thin;
+    scrollbar-color: var(--pr-fg-mute) transparent;
+}
+.pdfre-thumbs::-webkit-scrollbar { width: 8px; }
+.pdfre-thumbs::-webkit-scrollbar-thumb { background: var(--pr-fg-mute); border-radius: 999px; }
+
+.pdfre-thumb {
+    display: block;
+    width: 100%;
+    margin-bottom: 14px;
+    text-align: center;
+    color: var(--pr-fg-dim);
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+}
+.pdfre-thumb-box {
+    position: relative;
+    width: 100%;
+    background: var(--pr-page);
+    border: 2px solid transparent;
+    border-radius: 4px;
+    overflow: hidden;
+    transition: border-color .15s var(--pr-ease), transform .15s var(--pr-ease);
+}
+.pdfre-thumb-box canvas { display: block; width: 100%; height: auto; }
+.pdfre-thumb:hover .pdfre-thumb-box { transform: translateY(-1px); border-color: var(--pr-fg-mute); }
+.pdfre-thumb.is-active .pdfre-thumb-box { border-color: var(--pr-accent); }
+.pdfre-thumb.is-active { color: var(--pr-accent); font-weight: 600; }
+
+/* ──────────────────────────────────────────────────────────────
+   7. FLOATING DOCK (bottom pill — Drive style)
+   ────────────────────────────────────────────────────────────── */
+.pdfre-dock {
+    position: absolute;
+    left: 50%;
+    bottom: 20px;
+    z-index: 30;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 5px 8px;
+    transform: translateX(-50%);
+    background: var(--pr-chrome);
+    -webkit-backdrop-filter: saturate(180%) blur(12px);
+    backdrop-filter: saturate(180%) blur(12px);
+    border: 1px solid var(--pr-border);
+    border-radius: var(--pr-pill);
+    box-shadow: var(--pr-shadow);
+    transition: transform .22s var(--pr-ease), opacity .22s var(--pr-ease);
+    will-change: transform;
+    max-width: calc(100% - 24px);
+}
+
+.pdfre-sep {
+    width: 1px;
+    height: 22px;
+    margin: 0 5px;
+    background: var(--pr-border);
+    flex: 0 0 auto;
+}
+
+.pdfre-pageind {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 0 4px;
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+    color: var(--pr-fg-dim);
+    white-space: nowrap;
+}
+
+.pdfre-pageinput {
+    width: 42px;
+    height: 28px;
+    padding: 0 4px;
+    text-align: center;
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+    color: var(--pr-fg);
+    background: var(--pr-bg-3);
+    border: 1px solid transparent;
+    border-radius: 6px;
+    -moz-appearance: textfield;
+}
+.pdfre-pageinput::-webkit-outer-spin-button,
+.pdfre-pageinput::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.pdfre-pageinput:focus { border-color: var(--pr-accent); background: var(--pr-bg-2); }
+
+.pdfre-zoomval {
+    min-width: 48px;
+    padding: 0 2px;
+    text-align: center;
+    font-size: 12.5px;
+    font-variant-numeric: tabular-nums;
+    color: var(--pr-fg-dim);
+    white-space: nowrap;
+}
+
+/* auto-hide state — controls slide out of the way */
+.pdfre-shell.is-idle .pdfre-topbar {
+    transform: translateY(-100%);
+    opacity: 0;
+    pointer-events: none;
+}
+.pdfre-shell.is-idle .pdfre-dock {
+    transform: translate(-50%, calc(100% + 24px));
+    opacity: 0;
+    pointer-events: none;
+}
+.pdfre-shell.is-idle { cursor: none; }
+
+/* ──────────────────────────────────────────────────────────────
+   8. SEARCH PANEL
+   ────────────────────────────────────────────────────────────── */
+.pdfre-search {
+    position: absolute;
+    top: calc(var(--pr-bar-h) + 10px);
+    right: 14px;
+    z-index: 32;
+    width: 320px;
+    max-width: calc(100% - 28px);
+    background: var(--pr-bg-2);
+    border: 1px solid var(--pr-border);
+    border-radius: var(--pr-radius);
+    box-shadow: var(--pr-shadow);
+    overflow: hidden;
+    transform-origin: top right;
+    transform: scale(.94) translateY(-6px);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .16s var(--pr-ease), transform .16s var(--pr-ease);
+}
+.pdfre-shell.is-search .pdfre-search {
+    opacity: 1;
+    transform: none;
+    pointer-events: auto;
+}
+
+.pdfre-search-row {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 8px 8px 8px 12px;
+    border-bottom: 1px solid var(--pr-border);
+}
+.pdfre-search-input {
+    flex: 1 1 auto;
+    min-width: 0;
+    height: 32px;
+    font-size: 13.5px;
+    color: var(--pr-fg);
+}
+.pdfre-search-input::placeholder { color: var(--pr-fg-mute); }
+.pdfre-search-count {
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    color: var(--pr-fg-dim);
+    white-space: nowrap;
+    padding: 0 2px;
+}
+.pdfre-search .pdfre-ico { width: 30px; height: 30px; }
+.pdfre-search .pdfre-ico svg { width: 17px; height: 17px; }
+
+.pdfre-results {
+    max-height: 260px;
+    overflow-y: auto;
+    scrollbar-width: thin;
+}
+.pdfre-result {
+    display: block;
+    width: 100%;
+    padding: 9px 12px;
+    text-align: left;
+    font-size: 12.5px;
+    line-height: 1.45;
+    color: var(--pr-fg-dim);
+    border-bottom: 1px solid var(--pr-border);
+}
+.pdfre-result:last-child { border-bottom: 0; }
+.pdfre-result:hover { background: var(--pr-hover); }
+.pdfre-result.is-active { background: var(--pr-active); }
+.pdfre-result b { color: var(--pr-fg); font-weight: 600; }
+.pdfre-result-pg {
+    display: block;
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: .5px;
+    color: var(--pr-fg-mute);
+    margin-bottom: 2px;
+}
+.pdfre-empty {
+    padding: 18px 12px;
+    text-align: center;
+    font-size: 12.5px;
+    color: var(--pr-fg-mute);
+}
+
+/* ──────────────────────────────────────────────────────────────
+   9. LOADER / ERROR / TOAST
+   ────────────────────────────────────────────────────────────── */
+.pdfre-loader {
+    position: absolute;
+    inset: 0;
+    z-index: 40;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    background: var(--pr-bg);
+    transition: opacity .25s var(--pr-ease), visibility .25s var(--pr-ease);
+}
+.pdfre-loader.is-hidden { opacity: 0; visibility: hidden; }
+
+.pdfre-spin {
+    width: 34px;
+    height: 34px;
+    border: 3px solid var(--pr-border);
+    border-top-color: var(--pr-accent);
+    border-radius: 50%;
+    animation: pdfre-spin .8s linear infinite;
+}
+@keyframes pdfre-spin { to { transform: rotate(360deg); } }
+
+.pdfre-bar {
+    width: min(220px, 60%);
+    height: 3px;
+    background: var(--pr-bg-3);
+    border-radius: 999px;
+    overflow: hidden;
+}
+.pdfre-bar-fill {
+    height: 100%;
+    width: 0%;
+    background: var(--pr-accent);
+    border-radius: 999px;
+    transition: width .18s linear;
+}
+.pdfre-loader-text {
+    font-size: 12.5px;
+    color: var(--pr-fg-dim);
+    font-variant-numeric: tabular-nums;
+}
+
+.pdfre-error {
+    position: absolute;
+    inset: 0;
+    z-index: 41;
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 28px;
+    text-align: center;
+    background: var(--pr-bg);
+}
+.pdfre-error.is-shown { display: flex; }
+.pdfre-error svg { width: 34px; height: 34px; color: var(--pr-danger); }
+.pdfre-error-title { font-size: 15px; font-weight: 600; }
+.pdfre-error-msg {
+    font-size: 13px;
+    color: var(--pr-fg-dim);
+    max-width: 460px;
+}
+.pdfre-error-code {
+    font-family: var(--pr-mono);
+    font-size: 11px;
+    color: var(--pr-fg-mute);
+    word-break: break-word;
+    max-width: 460px;
+}
+.pdfre-btn {
+    margin-top: 6px;
+    padding: 8px 18px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--pr-bg);
+    background: var(--pr-accent);
+    border-radius: var(--pr-pill);
+    transition: filter .15s var(--pr-ease);
+}
+.pdfre-btn:hover { filter: brightness(1.08); }
+
+.pdfre-toast {
+    position: absolute;
+    left: 50%;
+    bottom: 84px;
+    z-index: 45;
+    padding: 9px 16px;
+    font-size: 12.5px;
+    color: #fff;
+    background: #3c4043;
+    border-radius: var(--pr-pill);
+    box-shadow: var(--pr-shadow);
+    transform: translate(-50%, 8px);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .2s var(--pr-ease), transform .2s var(--pr-ease);
+    white-space: nowrap;
+    max-width: calc(100% - 32px);
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.pdfre-toast.is-shown { opacity: 1; transform: translate(-50%, 0); }
+
+/* ──────────────────────────────────────────────────────────────
+   10. RESPONSIVE
+   ────────────────────────────────────────────────────────────── */
+@media (max-width: 640px) {
+    .pdfre-root { --pr-bar-h: 48px; }
+    .pdfre-shell { border-radius: 8px; }
+    .pdfre-subtitle { display: none; }
+    .pdfre-shell.is-sidebar .pdfre-sidebar { flex-basis: 130px; width: 130px; }
+    .pdfre-dock { bottom: 14px; padding: 4px 6px; gap: 0; }
+    .pdfre-ico { width: 34px; height: 34px; }
+    .pdfre-ico svg { width: 18px; height: 18px; }
+    .pdfre-ico[data-tip]::after { display: none; }
+    .pdfre-zoomval { display: none; }
+    .pdfre-sep { margin: 0 3px; }
+    .pdfre-pages { padding: 0 8px; gap: 10px; }
+    .pdfre-search { right: 8px; left: 8px; width: auto; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .pdfre-root *,
+    .pdfre-root *::before,
+    .pdfre-root *::after {
+        animation-duration: .001ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: .001ms !important;
+    }
+}
+
+/* ──────────────────────────────────────────────────────────────
+   11. PRINT LOCKOUT
+   The viewer is never part of a printed page. The engine also
+   injects a document-level guard while a reader is mounted.
+   ────────────────────────────────────────────────────────────── */
+@media print {
+    .pdfre-root,
+    .pdfre-shell,
+    .pdfre-page,
+    .pdfre-page canvas {
+        display: none !important;
+        visibility: hidden !important;
+    }
+}
