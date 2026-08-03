@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PDF Reader Engine — Link Encoder</title>
+<style>
+  :root{
+    --bg:#17181a; --panel:#202124; --panel2:#292a2d; --line:rgba(255,255,255,.13);
+    --fg:#e8eaed; --dim:#9aa0a6; --mute:#5f6368; --accent:#8ab4f8;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    background:var(--bg);color:var(--fg);
+    font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    padding:40px 20px 80px;
+  }
+  .wrap{max-width:760px;margin:0 auto}
+  h1{font-size:22px;font-weight:600;letter-spacing:-.2px}
+  .lede{color:var(--dim);font-size:14px;margin:6px 0 28px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:20px;margin-bottom:18px}
+  label{display:block;font-size:12.5px;font-weight:600;letter-spacing:.3px;
+        text-transform:uppercase;color:var(--dim);margin:0 0 7px}
+  .hint{font-size:12.5px;color:var(--mute);margin:6px 0 0}
+  input[type=text]{
+    width:100%;padding:11px 13px;font:14px/1.4 var(--mono);color:var(--fg);
+    background:var(--panel2);border:1px solid var(--line);border-radius:8px;outline:0;
+  }
+  input[type=text]:focus{border-color:var(--accent)}
+  .row{display:flex;gap:14px;flex-wrap:wrap;margin-top:16px}
+  .row>div{flex:1 1 200px}
+  button{
+    margin-top:18px;padding:11px 22px;font:600 14px/1 inherit;color:#17181a;
+    background:var(--accent);border:0;border-radius:999px;cursor:pointer;
+  }
+  button:hover{filter:brightness(1.08)}
+  button.ghost{background:transparent;color:var(--accent);border:1px solid var(--line);margin-left:8px}
+  pre{
+    background:var(--panel2);border:1px solid var(--line);border-radius:8px;
+    padding:14px;font:12.5px/1.6 var(--mono);color:#cfd3d7;
+    white-space:pre-wrap;word-break:break-word;max-height:340px;overflow:auto;
+  }
+  .out{display:none}
+  .out.on{display:block}
+  .note{
+    border-left:3px solid #fbbc05;background:rgba(251,188,5,.07);
+    padding:12px 14px;border-radius:0 8px 8px 0;font-size:13.5px;color:#e6d9b0;margin-top:26px
+  }
+  code{font-family:var(--mono);font-size:12.5px;color:var(--accent)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>Link encoder</h1>
+  <p class="lede">Turns a PDF URL into a token so the address is not sitting in your page source, then writes the embed block for you. Everything runs in this page — nothing is uploaded.</p>
+
+  <div class="card">
+    <label for="url">PDF URL</label>
+    <input id="url" type="text" placeholder="https://cdn.jsdelivr.net/gh/user/repo@v1/file.pdf" spellcheck="false">
+    <p class="hint">Must be reachable over HTTPS and send CORS headers. jsDelivr, GitHub raw, Cloudflare R2 and S3 all do.</p>
+
+    <div class="row">
+      <div>
+        <label for="key">Extra key <span style="text-transform:none;font-weight:400">(optional)</span></label>
+        <input id="key" type="text" placeholder="leave blank for none" spellcheck="false">
+        <p class="hint">Same value must go in <code>key</code> on the page.</p>
+      </div>
+      <div>
+        <label for="title">Document title</label>
+        <input id="title" type="text" placeholder="Chapter 1 — Notes" spellcheck="false">
+      </div>
+    </div>
+
+    <div class="row">
+      <div>
+        <label for="repo">Your CDN base</label>
+        <input id="repo" type="text" value="https://cdn.jsdelivr.net/gh/YOUR-USER/pdf-reader-engine@1.0.0" spellcheck="false">
+      </div>
+      <div>
+        <label for="hosts">Lock to domains <span style="text-transform:none;font-weight:400">(optional)</span></label>
+        <input id="hosts" type="text" placeholder="example.com, *.blogspot.com" spellcheck="false">
+      </div>
+    </div>
+
+    <button id="go">Generate embed code</button>
+    <button id="again" class="ghost" type="button">New token</button>
+  </div>
+
+  <div class="card out" id="out">
+    <label>Token</label>
+    <pre id="tok"></pre>
+    <label style="margin-top:18px">Paste this into your post</label>
+    <pre id="snip"></pre>
+    <button id="copy" type="button">Copy embed code</button>
+  </div>
+
+  <div class="note">
+    A token keeps the address out of your page source and out of casual view. It does not make the file secret — anyone who opens the browser's network panel while the page loads can still see where the bytes came from. If the file genuinely must stay private, put a proxy in front of it (see <code>proxy/</code> in this repo) so the browser only ever sees your proxy address.
+  </div>
+
+</div>
+
+<script>
+/* codec — identical to the one inside pdfre.js */
+var PEPPER = 'pdfre|v1|8f3c2d';
+
+function b64u(s){
+  return btoa(unescape(encodeURIComponent(s)))
+    .replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+}
+function xorStr(s,k){
+  var o='';
+  for(var i=0;i<s.length;i++) o+=String.fromCharCode(s.charCodeAt(i)^k.charCodeAt(i%k.length));
+  return o;
+}
+function nonce(n){
+  var abc='abcdefghijklmnopqrstuvwxyz0123456789',o='',b=null;
+  try{ if(crypto&&crypto.getRandomValues){ b=new Uint8Array(n); crypto.getRandomValues(b);} }catch(e){}
+  for(var i=0;i<n;i++){ var r=b?b[i]:Math.floor(Math.random()*256); o+=abc.charAt(r%abc.length); }
+  return o;
+}
+function encodeSrc(url,key){
+  var nc=nonce(6), k=PEPPER+nc+(key||'');
+  return 'p1.'+nc+'.'+b64u(xorStr(encodeURIComponent(String(url)),k));
+}
+
+var $ = function(id){ return document.getElementById(id); };
+
+function build(){
+  var url = $('url').value.trim();
+  if(!url){ $('url').focus(); return; }
+
+  var key   = $('key').value.trim();
+  var title = $('title').value.trim() || 'Document';
+  var base  = $('repo').value.trim().replace(/\/+$/,'');
+  var hosts = $('hosts').value.trim();
+  var tok   = encodeSrc(url, key);
+
+  var attrs =
+    '\n     data-pdfre\n' +
+    '     data-pdfre-enc="' + tok + '"' +
+    (key ? '\n     data-pdfre-key="' + key + '"' : '') +
+    '\n     data-pdfre-title="' + title.replace(/"/g,'&quot;') + '"' +
+    '\n     data-pdfre-height="720"' +
+    '\n     data-pdfre-theme="dark"' +
+    (hosts ? '\n     data-pdfre-hosts="' + hosts + '"' : '');
+
+  var snippet =
+'<!-- head block — once per site -->\n' +
+'<link rel="stylesheet" href="' + base + '/pdfre.css">\n' +
+'<script defer src="' + base + '/pdfre.js"><\/script>\n\n' +
+'<!-- reader block — once per document -->\n' +
+'<div' + attrs + '></div>';
+
+  $('tok').textContent = tok;
+  $('snip').textContent = snippet;
+  $('out').classList.add('on');
+  $('out').scrollIntoView({behavior:'smooth', block:'nearest'});
+}
+
+$('go').addEventListener('click', build);
+$('again').addEventListener('click', build);
+$('url').addEventListener('keydown', function(e){ if(e.key==='Enter') build(); });
+
+$('copy').addEventListener('click', function(){
+  var t = $('snip').textContent;
+  navigator.clipboard.writeText(t).then(function(){
+    var b=$('copy'); b.textContent='Copied';
+    setTimeout(function(){ b.textContent='Copy embed code'; },1400);
+  });
+});
+</script>
+</body>
+</html>
