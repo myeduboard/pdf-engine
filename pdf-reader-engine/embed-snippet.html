@@ -1,0 +1,180 @@
+<!-- ================================================================
+  PDF Reader Engine — Universal Embed Snippet
+  ----------------------------------------------------------------
+  1. Paste the HEAD BLOCK once per site (Blogger: Theme → Edit HTML,
+     just before </head>. WordPress: header widget or theme header).
+  2. Then drop a READER BLOCK anywhere you want a document to appear.
+
+  Replace YOUR-USER and VERSION with your GitHub details.
+================================================================ -->
+
+
+<!-- ══════════════════════════════════════════════════════════
+  HEAD BLOCK — paste ONCE per site
+══════════════════════════════════════════════════════════ -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/YOUR-USER/pdf-reader-engine@VERSION/pdfre.css">
+<script defer src="https://cdn.jsdelivr.net/gh/YOUR-USER/pdf-reader-engine@VERSION/pdfre.js"></script>
+
+<!-- Optional: pin pdf.js yourself instead of letting the engine fetch it -->
+<!--
+<script>
+  window.PDFRE_CONFIG = {
+    pdfjsVersion: '3.11.174'   // or set pdfjsLib / pdfjsWorker to full URLs
+  };
+</script>
+-->
+
+
+<!-- ══════════════════════════════════════════════════════════
+  READER BLOCKS — paste per post
+══════════════════════════════════════════════════════════ -->
+
+
+<!-- ────────────────────────────────────────────────────────
+  METHOD 1 — Markup only, no JavaScript
+  Best for: Blogger posts. Paste in a Custom HTML / HTML view block.
+  The engine mounts every [data-pdfre] element automatically.
+──────────────────────────────────────────────────────────── -->
+<div data-pdfre
+     data-pdfre-src="https://cdn.jsdelivr.net/gh/YOUR-USER/YOUR-REPO@TAG/notes/chapter-1.pdf"
+     data-pdfre-title="Chapter 1 — Cell Biology"
+     data-pdfre-subtitle="Class 12 · Revision notes"
+     data-pdfre-height="720"
+     data-pdfre-theme="dark"></div>
+
+
+<!-- ────────────────────────────────────────────────────────
+  METHOD 2 — Obfuscated source (recommended default)
+  The address is not readable in your page source. Generate the token
+  with tools/link-encoder.html, or from the browser console:
+
+      PDFRE.encodeSrc('https://example.com/file.pdf', 'my-key')
+
+  Keep `data-pdfre-key` the same as the key you encoded with.
+──────────────────────────────────────────────────────────── -->
+<div data-pdfre
+     data-pdfre-enc="p1.k3m9xq.PASTE-YOUR-TOKEN-HERE"
+     data-pdfre-key="my-key"
+     data-pdfre-title="Chapter 2 — Genetics"
+     data-pdfre-height="80vh"
+     data-pdfre-hosts="yourblog.blogspot.com,*.yoursite.com"
+     data-pdfre-watermark="yoursite.com"></div>
+
+
+<!-- ────────────────────────────────────────────────────────
+  METHOD 3 — JavaScript API, full settings
+  Best for: when you want callbacks, custom heights, or programmatic
+  control (goTo, setZoom, toggleFullscreen, destroy).
+──────────────────────────────────────────────────────────── -->
+<div id="pdfre-doc-3"></div>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+
+  var reader = window.initPdfReader('pdfre-doc-3', {
+
+    /* ---- source (pick ONE) ---- */
+    src:    'https://cdn.jsdelivr.net/gh/YOUR-USER/YOUR-REPO@TAG/file.pdf',
+    // srcEnc: 'p1.xxxxxx.xxxxxxxx',   // token from the link encoder
+    // key:    'my-key',
+
+    /* ---- presentation ---- */
+    title:    'Physics — Unit 4',
+    subtitle: 'NCERT · 42 pages',
+    height:   720,               // px number, or '80vh', or '100%'
+    theme:    'dark',            // 'dark' | 'light'
+    page:     1,                 // page to open on
+    zoom:     'fit-width',       // 'fit-width' | 'fit-page' | 1.25
+
+    /* ---- behaviour ---- */
+    autohide:      'always',     // 'always' | 'fullscreen' | 'never'
+    autohideDelay: 2600,         // ms of stillness before controls fade
+    thumbnails:    true,
+    search:        true,
+    rotate:        true,
+    showPageNumbers: true,
+    startFullscreen: false,
+
+    /* ---- protection ---- */
+    protect:        true,        // context menu, copy, drag, shortcut guards
+    blockPagePrint: true,        // Ctrl+P prints a notice, not the document
+    allowedHosts:   ['yourblog.blogspot.com', '*.yoursite.com'],
+    watermark:      'yoursite.com',
+    watermarkOpacity: 0.10,
+    paranoid:       false,       // blank the viewer while devtools are open
+
+    /* ---- callbacks ---- */
+    onReady:      function (info) { console.log('pages:', info.pages); },
+    onPageChange: function (n)    { /* track reading progress */ },
+    onError:      function (err)  { /* your own fallback */ }
+  });
+
+  // reader.goTo(12);
+  // reader.setZoom('fit-page');
+  // reader.toggleFullscreen(true);
+  // reader.destroy();
+});
+</script>
+
+
+<!-- ────────────────────────────────────────────────────────
+  METHOD 4 — Proxy mode (the only genuinely leak-proof option)
+  The real file address lives on your Cloudflare Worker or Apps Script,
+  never in the page. Leave src and srcEnc empty.
+  See proxy/cloudflare-worker.js and proxy/google-apps-script.gs.
+──────────────────────────────────────────────────────────── -->
+<div data-pdfre
+     data-pdfre-proxy="https://your-worker.workers.dev/d/chapter-1"
+     data-pdfre-title="Chapter 1 — Private edition"
+     data-pdfre-height="760"
+     data-pdfre-hosts="yourblog.blogspot.com"></div>
+
+
+<!-- ────────────────────────────────────────────────────────
+  METHOD 5 — Several documents on one page
+  Each block is independent. Give each one its own id if you use the
+  JavaScript API; the markup method needs no ids at all.
+──────────────────────────────────────────────────────────── -->
+<div data-pdfre data-pdfre-src="https://example.com/part-1.pdf"
+     data-pdfre-title="Part 1" data-pdfre-height="520"></div>
+
+<div data-pdfre data-pdfre-src="https://example.com/part-2.pdf"
+     data-pdfre-title="Part 2" data-pdfre-height="520"
+     data-pdfre-theme="light"></div>
+
+
+<!-- ══════════════════════════════════════════════════════════
+  DATA ATTRIBUTE REFERENCE (Method 1, 2, 4, 5)
+  ══════════════════════════════════════════════════════════
+  data-pdfre              required marker, no value
+  data-pdfre-src          plain PDF URL
+  data-pdfre-enc          obfuscated token (use instead of src)
+  data-pdfre-key          key the token was encoded with
+  data-pdfre-proxy        proxy endpoint (use alone for full privacy)
+  data-pdfre-title        heading shown in the top bar
+  data-pdfre-subtitle     small line under the heading
+  data-pdfre-height       720, "80vh", "100%"
+  data-pdfre-theme        dark | light
+  data-pdfre-page         page to open on
+  data-pdfre-zoom         fit-width | fit-page | 1.25
+  data-pdfre-autohide     always | fullscreen | never
+  data-pdfre-thumbnails   false to hide the page sidebar
+  data-pdfre-search       false to hide search
+  data-pdfre-fullscreen   true to open fullscreen straight away
+  data-pdfre-watermark    text stamped into every page
+  data-pdfre-hosts        comma separated domains allowed to display it
+══════════════════════════════════════════════════════════ -->
+
+
+<!-- ══════════════════════════════════════════════════════════
+  KEYBOARD SHORTCUTS (inside the viewer)
+  ══════════════════════════════════════════════════════════
+  ↓ / ↑ / Space / PageUp / PageDown   scroll
+  → / ←                               next / previous page
+  Home / End                          first / last page
+  + / −                               zoom in / out
+  0                                   fit to width
+  F                                   fullscreen
+  R                                   rotate 90°
+  Ctrl+F                              search
+  Esc                                 close search or exit fullscreen
+══════════════════════════════════════════════════════════ -->
