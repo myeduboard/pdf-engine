@@ -1,5 +1,5 @@
 /* ==============================================================
-   PDF Reader Engine v1 — Secure Embedded PDF Viewer
+   PDF Reader Engine v1.1 — Secure Embedded Document Viewer
    JS  — host this file on GitHub and serve via jsDelivr CDN:
    https://cdn.jsdelivr.net/gh/YOUR-USER/pdf-reader-engine@VERSION/pdfre.js
 
@@ -11,6 +11,9 @@
 
    Public API
    ----------
+   Sources: PDF, self-contained HTML notes, or a JSON contents file
+   listing several HTML notes files to merge.
+
    window.initPdfReader(containerId, options)  → reader instance
    window.PDFRE.encodeSrc(url [, key])         → obfuscated token
    window.PDFRE.autoInit()                     → mount [data-pdfre] blocks
@@ -18,7 +21,7 @@
 (function (global) {
     'use strict';
 
-    var VERSION = '1.0.0';
+    var VERSION = '1.1.0';
     var CFG = global.PDFRE_CONFIG = global.PDFRE_CONFIG || {};
 
     /* ==========================================================
@@ -235,6 +238,30 @@
         }
     }
 
+    function decodeText(bytes) {
+        if (global.TextDecoder) return new TextDecoder('utf-8').decode(bytes);
+        var out = '';
+        for (var i = 0; i < bytes.length; i += 8192) {
+            out += String.fromCharCode.apply(null, bytes.subarray(i, i + 8192));
+        }
+        try { return decodeURIComponent(escape(out)); } catch (e) { return out; }
+    }
+
+    /* Work out what arrived: a PDF, a JSON contents file, or HTML notes. */
+    function sniffKind(bytes) {
+        if (bytes.length > 4 && bytes[0] === 0x25 && bytes[1] === 0x50 &&
+            bytes[2] === 0x44 && bytes[3] === 0x46) return 'pdf';
+
+        var head = '';
+        for (var i = 0; i < Math.min(bytes.length, 600); i++) {
+            head += String.fromCharCode(bytes[i]);
+        }
+        head = head.replace(/^\uFEFF/, '').replace(/^\s+/, '');
+
+        if (head.charAt(0) === '{' || head.charAt(0) === '[') return 'manifest';
+        return 'html';
+    }
+
     /* ==========================================================
        4. ICONS
        ========================================================== */
@@ -251,6 +278,7 @@
         fsIn: '<path d="M4 9.5V4h5.5M20 9.5V4h-5.5M4 14.5V20h5.5M20 14.5V20h-5.5"/>',
         fsOut: '<path d="M9.5 4v5.5H4M14.5 4v5.5H20M9.5 20v-5.5H4M14.5 20v-5.5H20"/>',
         rotate: '<path d="M20.5 12a8.5 8.5 0 1 1-2.9-6.4"/><path d="M20.5 4v5h-5"/>',
+        outline: '<circle cx="4.6" cy="6" r="1.15"/><path d="M9 6h11"/><circle cx="4.6" cy="12" r="1.15"/><path d="M9 12h11"/><circle cx="4.6" cy="18" r="1.15"/><path d="M9 18h7"/>',
         alert: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.2v6M12 16.3v.5"/>'
     };
 
@@ -352,6 +380,10 @@
         src: '',
         srcEnc: '',
         key: '',
+        htmlUrl: '',            // alias of src, for readability
+        jsonUrl: '',            // alias of src — a JSON contents file
+        srcType: 'auto',        // 'auto' | 'pdf' | 'html' | 'manifest'
+        sectionSelector: '',    // what counts as a "page" in HTML notes
         proxyUrl: '',
         headers: null,
         withCredentials: false,
@@ -407,6 +439,7 @@
           '<div class="pdfre-body">' +
             '<aside class="pdfre-sidebar"><div class="pdfre-thumbs"></div></aside>' +
             '<div class="pdfre-scroll"><div class="pdfre-pages"></div></div>' +
+            '<div class="pdfre-frame-wrap"></div>' +
           '</div>' +
 
           '<div class="pdfre-dock">' +
@@ -461,6 +494,11 @@
         this.opts = o;
 
         this.container = container;
+        this.mode = null;        // 'pdf' | 'html'
+        this.frame = null;
+        this.idoc = null;
+        this.iwin = null;
+        this.sections = [];
         this.pdf = null;
         this.numPages = 0;
         this.dims = [];          // 1-based page dimensions at scale 1
@@ -500,6 +538,7 @@
         this.shell = q('.pdfre-shell');
         this.scrollEl = q('.pdfre-scroll');
         this.pagesEl = q('.pdfre-pages');
+        this.frameWrap = q('.pdfre-frame-wrap');
         this.sidebarEl = q('.pdfre-thumbs');
         this.loaderEl = q('.pdfre-loader');
         this.loaderText = q('.pdfre-loader-text');
@@ -649,7 +688,9 @@
 
         var url;
         try {
-            url = o.srcEnc ? decodeSrc(o.srcEnc, o.key) : String(o.src || '');
+            url = o.srcEnc
+                ? decodeSrc(o.srcEnc, o.key)
+                : String(o.src || o.htmlUrl || o.jsonUrl || '');
         } catch (e) {
             this.fail('The document source could not be resolved.', e.message);
             return;
@@ -657,7 +698,7 @@
 
         if (!url && !o.proxyUrl) {
             this.fail('No document source was provided.',
-                'Set one of "src", "srcEnc" or "proxyUrl".');
+                'Set one of "src", "htmlUrl", "jsonUrl", "srcEnc" or "proxyUrl".');
             return;
         }
 
@@ -677,33 +718,71 @@
             fetchUrl = url;
         }
 
-        ensurePdfJs().then(function (lib) {
+        var manifestBase = url;   // kept in this closure only, never on the instance
+
+        fetchBytes(fetchUrl, o, function (got, total) {
+            if (total) {
+                self.setProgress(got / total, Math.round(got / total * 100) + '% · ' + fmtBytes(total));
+            } else {
+                self.setProgress(-1, fmtBytes(got) + ' loaded');
+            }
+        }).then(function (raw) {
             if (self.destroyed) return null;
-            return fetchBytes(fetchUrl, o, function (got, total) {
-                if (total) {
-                    self.setProgress(got / total, Math.round(got / total * 100) + '% · ' + fmtBytes(total));
-                } else {
-                    self.setProgress(-1, fmtBytes(got) + ' loaded');
-                }
-            }).then(function (bytes) {
-                if (self.destroyed) return null;
-                url = null;
-                fetchUrl = null;
+            url = null;
+            fetchUrl = null;
+
+            var bytes = normalizeBytes(raw);
+            var kind = (o.srcType && o.srcType !== 'auto') ? o.srcType : sniffKind(bytes);
+
+            if (kind === 'pdf') {
                 self.setProgress(1, 'Preparing pages…');
-                return lib.getDocument({
-                    data: normalizeBytes(bytes),
-                    disableAutoFetch: true,
-                    isEvalSupported: false,
-                    cMapUrl: 'https://cdn.jsdelivr.net/npm/pdfjs-dist@' + PDFJS_VERSION + '/cmaps/',
-                    cMapPacked: true
-                }).promise;
-            });
+                return self.openPdf(bytes);
+            }
+            if (kind === 'manifest' || kind === 'json') {
+                self.setProgress(1, 'Reading contents…');
+                return self.openManifest(decodeText(bytes), manifestBase);
+            }
+            self.setProgress(1, 'Preparing notes…');
+            return self.openHtml(decodeText(bytes));
+        }).catch(function (err) {
+            if (self.destroyed) return;
+            var msg = 'The file could not be fetched or is not a readable document.';
+            var detail = (err && err.message) || String(err);
+            if (/failed to fetch|networkerror|load failed/i.test(detail)) {
+                msg = 'The file could not be fetched. The host may not allow cross-origin requests (CORS).';
+            } else if (/invalid pdf|missing pdf|unexpected/i.test(detail)) {
+                msg = 'The file was received but is not a valid PDF.';
+            } else if (/password/i.test(detail)) {
+                msg = 'This PDF is password protected.';
+            } else if (/json/i.test(detail)) {
+                msg = 'The contents file was received but is not valid JSON.';
+            }
+            self.fail(msg, detail);
+            if (typeof self.opts.onError === 'function') self.opts.onError(err);
+        });
+    };
+
+    /* ---------- PDF path ---------- */
+    Reader.prototype.openPdf = function (bytes) {
+        var self = this;
+        this.mode = 'pdf';
+
+        return ensurePdfJs().then(function (lib) {
+            if (self.destroyed) return null;
+            return lib.getDocument({
+                data: bytes,
+                disableAutoFetch: true,
+                isEvalSupported: false,
+                cMapUrl: 'https://cdn.jsdelivr.net/npm/pdfjs-dist@' + PDFJS_VERSION + '/cmaps/',
+                cMapPacked: true
+            }).promise;
         }).then(function (pdf) {
             if (!pdf || self.destroyed) return;
             self.pdf = pdf;
             self.numPages = pdf.numPages;
             self.pageTotal.textContent = pdf.numPages;
             self.pageInput.max = pdf.numPages;
+
             return self.primeDims().then(function () {
                 self.buildPages();
                 self.relayout(false);
@@ -714,22 +793,9 @@
                 self.poke();
                 if (self.opts.thumbnails) self.buildThumbs();
                 if (typeof self.opts.onReady === 'function') {
-                    self.opts.onReady({ pages: self.numPages });
+                    self.opts.onReady({ mode: 'pdf', pages: self.numPages });
                 }
             });
-        }).catch(function (err) {
-            if (self.destroyed) return;
-            var msg = 'The file could not be fetched or is not a readable PDF.';
-            var detail = (err && err.message) || String(err);
-            if (/failed to fetch|networkerror|load failed/i.test(detail)) {
-                msg = 'The file could not be fetched. The host may not allow cross-origin requests (CORS).';
-            } else if (/invalid pdf|missing pdf|unexpected/i.test(detail)) {
-                msg = 'The file was received but is not a valid PDF.';
-            } else if (/password/i.test(detail)) {
-                msg = 'This PDF is password protected.';
-            }
-            self.fail(msg, detail);
-            if (typeof self.opts.onError === 'function') self.opts.onError(err);
         });
     };
 
@@ -818,6 +884,7 @@
     };
 
     Reader.prototype.relayout = function (keepAnchor) {
+        if (this.mode === 'html') return this.htmlRelayout();
         if (!this.pdf) return;
 
         var anchorPage = this.current;
@@ -871,6 +938,11 @@
     };
 
     Reader.prototype.cycleFit = function () {
+        if (this.mode === 'html') {
+            if (this.fitMode) { this.setZoom(1); this.toast('Actual size'); }
+            else { this.setZoom('fit-width'); this.toast('Fit to width'); }
+            return;
+        }
         this.setZoom(this.fitMode === 'fit-width' ? 'fit-page' : 'fit-width');
         this.toast(this.fitMode === 'fit-width' ? 'Fit to width' : 'Fit to page');
     };
@@ -884,6 +956,7 @@
     };
 
     Reader.prototype.rotate = function (deg) {
+        if (this.mode === 'html') return;
         this.rotation = (this.rotation + deg + 360) % 360;
         this.unrenderAll();
         this.relayout(true);
@@ -892,6 +965,7 @@
 
     /* ---------- rendering ---------- */
     Reader.prototype.updateVisible = function () {
+        if (this.mode === 'html') return this.htmlUpdateVisible();
         if (!this.pdf || this.destroyed) return;
 
         var top = this.scrollEl.scrollTop;
@@ -1005,6 +1079,7 @@
     };
 
     Reader.prototype.unrenderAll = function () {
+        if (this.mode === 'html') return;
         for (var i = 1; i <= this.numPages; i++) this.unrenderPage(i);
     };
 
@@ -1029,6 +1104,7 @@
 
     /* Blank every canvas (used around print events). */
     Reader.prototype.blank = function (on) {
+        if (this.mode === 'html') return;
         if (on) {
             for (var i = 1; i <= this.numPages; i++) {
                 var c = this.rendered[i];
@@ -1045,6 +1121,7 @@
 
     /* ---------- navigation ---------- */
     Reader.prototype.goTo = function (n, instant) {
+        if (this.mode === 'html') return this.htmlGoTo(n, instant);
         if (!this.pdf) return;
         n = clamp(parseInt(n, 10) || 1, 1, this.numPages);
         var pe = this.pageEls[n];
@@ -1063,11 +1140,16 @@
         var k = e.key;
         var handled = true;
 
+        var sc = (this.mode === 'html' && this.iwin) ? this.iwin : this.scrollEl;
+        var vh = (this.mode === 'html' && this.iwin)
+            ? this.iwin.innerHeight
+            : this.scrollEl.clientHeight;
+
         switch (k) {
             case 'ArrowDown': case 'PageDown': case ' ':
-                this.scrollEl.scrollBy({ top: this.scrollEl.clientHeight * 0.9, behavior: 'smooth' }); break;
+                sc.scrollBy({ top: vh * 0.9, behavior: 'smooth' }); break;
             case 'ArrowUp': case 'PageUp':
-                this.scrollEl.scrollBy({ top: -this.scrollEl.clientHeight * 0.9, behavior: 'smooth' }); break;
+                sc.scrollBy({ top: -vh * 0.9, behavior: 'smooth' }); break;
             case 'ArrowRight': this.goTo(this.current + 1); break;
             case 'ArrowLeft': this.goTo(this.current - 1); break;
             case 'Home': this.goTo(1); break;
@@ -1142,9 +1224,11 @@
 
         if (mode === 'never' || (mode === 'fullscreen' && !this.isFs)) {
             this.shell.classList.remove('is-idle');
+            this.setFrameIdle(false);
             return;
         }
         this.shell.classList.remove('is-idle');
+        this.setFrameIdle(false);
 
         var delay = immediateHide ? 420 : (this.opts.autohideDelay || 2600);
         this._idleTimer = setTimeout(function () {
@@ -1156,7 +1240,13 @@
             }
             if (document.activeElement === self.pageInput) return;
             self.shell.classList.add('is-idle');
+            self.setFrameIdle(true);
         }, delay);
+    };
+
+    Reader.prototype.setFrameIdle = function (on) {
+        if (!this.idoc) return;
+        try { this.idoc.documentElement.classList.toggle('pdfre-idle', !!on); } catch (e) { }
     };
 
     /* ---------- sidebar / thumbnails ---------- */
@@ -1260,6 +1350,7 @@
 
     Reader.prototype.buildTextIndex = function () {
         var self = this;
+        if (this.mode !== 'pdf') return Promise.resolve(null);
         if (this.textIndexPromise) return this.textIndexPromise;
 
         this.textIndex = new Array(this.numPages + 1);
@@ -1290,6 +1381,7 @@
     Reader.prototype.runSearch = function (term) {
         var self = this;
         term = String(term || '').trim();
+        if (this.mode === 'html') return this.htmlSearch(term);
         this.clearHighlights();
         this.matches = [];
         this.matchIndex = -1;
@@ -1368,6 +1460,7 @@
     };
 
     Reader.prototype.showMatch = function () {
+        if (this.mode === 'html') return this.showHtmlMatch();
         var m = this.matches[this.matchIndex];
         if (!m) return;
 
@@ -1416,6 +1509,7 @@
     };
 
     Reader.prototype.clearHighlights = function () {
+        if (this.mode === 'html') return this.clearHtmlMarks();
         var list = this.root.querySelectorAll('.pdfre-hl');
         for (var i = 0; i < list.length; i++) list[i].parentNode.removeChild(list[i]);
     };
@@ -1517,6 +1611,7 @@
     /* ---------- public instance API ---------- */
     Reader.prototype.getState = function () {
         return {
+            mode: this.mode,
             page: this.current,
             pages: this.numPages,
             zoom: Math.round(this.scale * 100) / 100,
@@ -1546,11 +1641,579 @@
         if (this.pdf) { try { this.pdf.destroy(); } catch (e) { } }
         this.pdf = null;
 
+        if (this.frame && this.frame.parentNode) this.frame.parentNode.removeChild(this.frame);
+        this.frame = null;
+        this.idoc = null;
+        this.iwin = null;
+        this.sections = [];
+
         if (this.opts.protect) Guards.remove(this);
         if (this.root && this.root.parentNode) this.root.parentNode.removeChild(this.root);
 
         var i = Registry.indexOf(this);
         if (i > -1) Registry.splice(i, 1);
+    };
+
+    /* ==========================================================
+       6b. HTML NOTES MODE
+       ----------------------------------------------------------
+       An HTML notes file is mounted inside a sandboxed iframe via
+       srcdoc — the markup goes in, the address does not, and the
+       notes file's own scripts never run. The parent keeps script
+       access (allow-same-origin) so navigation, zoom, search and
+       the auto-hiding controls all still work.
+       ========================================================== */
+
+    var DEFAULT_SECTION_SEL =
+        '#book > section, .sheet > section, main > section, article > section, ' +
+        'body > section, .pdfre-part > section';
+
+    var HTML_RESET =
+        'html,body{height:auto !important;min-height:0 !important;max-height:none !important;' +
+        'overflow-x:hidden !important}' +
+        'body{margin:0 !important;padding:66px 0 96px 0 !important;' +
+        '-webkit-user-select:none;-moz-user-select:none;user-select:none;' +
+        '-webkit-touch-callout:none}' +
+        '#app,#canvas,#viewer,#page,.viewport,.wrapper{display:block !important;' +
+        'height:auto !important;max-height:none !important;overflow:visible !important}' +
+        'img,svg,canvas,figure{-webkit-user-drag:none;user-drag:none}' +
+        '::selection{background:transparent}' +
+        'html.pdfre-idle{cursor:none}' +
+        'html.pdfre-narrow .sheet{width:auto !important;max-width:none !important;' +
+        'margin:0 !important;padding:20px 15px !important;box-shadow:none !important}' +
+        'html.pdfre-narrow #canvas{padding:0 !important;background:none !important}' +
+        'html.pdfre-narrow body>*{max-width:100% !important}' +
+        'mark.pdfre-mark{background:rgba(251,188,5,.55);color:inherit;padding:0;border-radius:2px}' +
+        'mark.pdfre-mark.is-current{background:rgba(255,112,67,.7);box-shadow:0 0 0 2px rgba(255,112,67,.35)}' +
+        '.pdfre-wm{position:fixed;inset:0;pointer-events:none;z-index:2147483000;' +
+        'background-repeat:repeat;background-position:center}' +
+        '.pdfre-part-head{margin:0;padding:38px 0 26px;text-align:center;' +
+        'font:600 12px/1 system-ui,sans-serif;letter-spacing:.22em;text-transform:uppercase;' +
+        'color:#8a7a5a;border-top:1px solid rgba(0,0,0,.12)}' +
+        '@media print{html,body{display:none !important}}';
+
+    /* Strip anything executable, keep the author's styling. */
+    function parseNotes(html) {
+        var doc;
+        try {
+            doc = new DOMParser().parseFromString(html, 'text/html');
+        } catch (e) {
+            return { title: '', head: '', body: html };
+        }
+
+        var kill = doc.querySelectorAll('script,noscript,iframe,object,embed,applet,form,base,meta[http-equiv]');
+        for (var i = kill.length - 1; i >= 0; i--) {
+            if (kill[i].parentNode) kill[i].parentNode.removeChild(kill[i]);
+        }
+
+        var all = doc.querySelectorAll('*');
+        for (var n = 0; n < all.length; n++) {
+            var attrs = all[n].attributes;
+            for (var a = attrs.length - 1; a >= 0; a--) {
+                var name = attrs[a].name.toLowerCase();
+                var val = attrs[a].value || '';
+                if (name.indexOf('on') === 0 || /^\s*javascript:/i.test(val)) {
+                    all[n].removeAttribute(attrs[a].name);
+                }
+            }
+        }
+
+        var head = [];
+        var styles = doc.head ? doc.head.querySelectorAll('style') : [];
+        for (var s = 0; s < styles.length; s++) head.push(styles[s].outerHTML);
+
+        var links = doc.head
+            ? doc.head.querySelectorAll('link[rel="stylesheet"],link[rel="preconnect"],link[rel="dns-prefetch"]')
+            : [];
+        for (var l = 0; l < links.length; l++) head.push(links[l].outerHTML);
+
+        return {
+            title: (doc.title || '').trim(),
+            head: head.join('\n'),
+            body: doc.body ? doc.body.innerHTML : html
+        };
+    }
+
+    function watermarkCss(text, opacity) {
+        if (!text) return '';
+        var svgWm = '<svg xmlns="http://www.w3.org/2000/svg" width="320" height="210">' +
+            '<text x="160" y="105" text-anchor="middle" font-family="sans-serif" font-size="21" ' +
+            'font-weight="600" fill="#000" fill-opacity="' + (opacity || 0.1) + '" ' +
+            'transform="rotate(-28 160 105)">' +
+            String(text).replace(/[<>&"]/g, '') + '</text></svg>';
+        return 'url("data:image/svg+xml;utf8,' + encodeURIComponent(svgWm) + '")';
+    }
+
+    Reader.prototype.openHtml = function (text) {
+        return this.mountHtml([{ title: '', html: text }]);
+    };
+
+    /* A JSON contents file listing one or more HTML notes files. */
+    Reader.prototype.openManifest = function (text, base) {
+        var self = this, o = this.opts;
+        var data;
+        try {
+            data = JSON.parse(text);
+        } catch (e) {
+            throw new Error('Invalid JSON in the contents file: ' + e.message);
+        }
+
+        var list = data.documents || data.parts || data.notes || data.files ||
+            (Array.isArray(data) ? data : null);
+        if (!list || !list.length) {
+            throw new Error('The contents file has no "documents" array.');
+        }
+
+        if (data.title) {
+            o.title = data.title;
+            this.root.querySelector('.pdfre-title').textContent = data.title;
+        }
+        if (data.subtitle) {
+            o.subtitle = data.subtitle;
+            this.root.querySelector('.pdfre-subtitle').textContent = data.subtitle;
+        }
+
+        var resolve = function (u) {
+            var abs = u;
+            try { if (base) abs = new URL(u, base).href; } catch (e) { }
+            if (!o.proxyUrl) return abs;
+            return o.proxyUrl.indexOf('{src}') > -1
+                ? o.proxyUrl.replace('{src}', encodeURIComponent(abs))
+                : o.proxyUrl + (o.proxyUrl.indexOf('?') > -1 ? '&' : '?') + 'src=' + encodeURIComponent(abs);
+        };
+
+        var parts = [], missed = [], i = 0;
+
+        return (function step() {
+            if (i >= list.length || self.destroyed) return Promise.resolve();
+            var entry = list[i++];
+            var url = typeof entry === 'string'
+                ? entry
+                : (entry.url || entry.src || entry.htmlUrl || entry.jsonUrl || '');
+            var title = (typeof entry === 'object' && entry.title) ? entry.title : '';
+
+            self.setProgress(i / list.length, 'Loading ' + i + ' of ' + list.length + '…');
+
+            if (!url) return step();
+
+            return fetchBytes(resolve(url), o, null).then(function (bytes) {
+                parts.push({ title: title, html: decodeText(normalizeBytes(bytes)) });
+            }).catch(function (err) {
+                missed.push((title || url) + ' — ' + ((err && err.message) || 'unavailable'));
+            }).then(step);
+        })().then(function () {
+            if (self.destroyed) return;
+            if (!parts.length) {
+                throw new Error('None of the listed documents could be loaded. ' + missed.join('; '));
+            }
+            return self.mountHtml(parts, parts.length > 1).then(function () {
+                if (missed.length) {
+                    self.toast(missed.length + ' part' + (missed.length > 1 ? 's' : '') +
+                        ' could not be loaded.');
+                }
+            });
+        });
+    };
+
+    Reader.prototype.mountHtml = function (parts, showPartHeads) {
+        var self = this, o = this.opts;
+
+        this.mode = 'html';
+        this.shell.classList.add('is-html');
+        this.root.querySelector('.pdfre-b-rot').style.display = 'none';
+        var thumbBtn = this.root.querySelector('.pdfre-b-thumbs');
+        thumbBtn.innerHTML = svg('outline');
+        thumbBtn.setAttribute('data-tip', 'Contents');
+
+        this.pageInput.setAttribute('aria-label', 'Section number');
+        this.root.querySelector('.pdfre-b-prev').setAttribute('data-tip', 'Previous section');
+        this.root.querySelector('.pdfre-b-next').setAttribute('data-tip', 'Next section');
+        this.searchInput.setAttribute('placeholder', 'Search in notes');
+
+        var heads = [], seenHead = {}, bodies = [];
+
+        for (var i = 0; i < parts.length; i++) {
+            var parsed = parseNotes(parts[i].html);
+
+            if (parsed.head && !seenHead[parsed.head]) {
+                seenHead[parsed.head] = 1;
+                heads.push(parsed.head);
+            }
+            if (showPartHeads && parts[i].title) {
+                bodies.push('<p class="pdfre-part-head">' +
+                    String(parts[i].title).replace(/[<>&]/g, '') + '</p>');
+            }
+            bodies.push('<div class="pdfre-part">' + parsed.body + '</div>');
+
+            if (i === 0 && parsed.title && (!o.title || o.title === 'Document')) {
+                this.root.querySelector('.pdfre-title').textContent = parsed.title;
+            }
+        }
+
+        var wm = watermarkCss(o.watermark, o.watermarkOpacity);
+        var wmDiv = wm ? '<div class="pdfre-wm" style="background-image:' + wm + '"></div>' : '';
+
+        var srcdoc =
+            '<!DOCTYPE html><html><head><meta charset="utf-8">' +
+            '<meta name="viewport" content="width=device-width,initial-scale=1">' +
+            heads.join('\n') +
+            '<style>' + HTML_RESET + '</style>' +
+            '</head><body>' + bodies.join('\n') + wmDiv + '</body></html>';
+
+        var frame = document.createElement('iframe');
+        frame.className = 'pdfre-frame';
+        frame.setAttribute('sandbox', 'allow-same-origin allow-popups');
+        frame.setAttribute('referrerpolicy', 'no-referrer');
+        frame.setAttribute('title', o.title || 'Document');
+        frame.setAttribute('aria-label', o.title || 'Document');
+
+        this.frameWrap.innerHTML = '';
+        this.frameWrap.appendChild(frame);
+        this.frame = frame;
+
+        return new Promise(function (resolve) {
+            var settled = false;
+
+            function done() {
+                if (settled || self.destroyed) return;
+                settled = true;
+                self.initFrame();
+                resolve();
+            }
+
+            frame.addEventListener('load', function () {
+                if (frameHasContent()) done();
+            });
+
+            function frameHasContent() {
+                try {
+                    var d = frame.contentDocument;
+                    return !!(d && d.body && d.body.children.length);
+                } catch (e) { return false; }
+            }
+
+            frame.srcdoc = srcdoc;
+
+            /* Poll for the frame's DOM rather than waiting on `load`, which
+               also waits for webfonts and images. If srcdoc did not take
+               after a couple of seconds, write the document in directly. */
+            var tries = 0;
+            (function poll() {
+                if (settled || self.destroyed) return;
+                if (frameHasContent()) return done();
+
+                if (++tries === 60) {
+                    try {
+                        var d = frame.contentDocument;
+                        d.open();
+                        d.write(srcdoc);
+                        d.close();
+                    } catch (e) { /* fall through to the timeout below */ }
+                }
+                if (tries < 120) setTimeout(poll, 25);
+                else done();
+            })();
+        });
+    };
+
+    Reader.prototype.initFrame = function () {
+        var self = this, o = this.opts;
+
+        try {
+            this.idoc = this.frame.contentDocument;
+            this.iwin = this.frame.contentWindow;
+        } catch (e) {
+            this.fail('The notes could not be displayed.', e.message);
+            return;
+        }
+        if (!this.idoc) {
+            this.fail('The notes could not be displayed.', 'Frame document unavailable.');
+            return;
+        }
+
+        /* sections become "pages" for the dock and the contents list */
+        var sel = o.sectionSelector || DEFAULT_SECTION_SEL;
+        var nodes = this.idoc.querySelectorAll(sel);
+        if (!nodes.length) nodes = this.idoc.querySelectorAll('h1, h2');
+        if (!nodes.length && this.idoc.body) nodes = [this.idoc.body.firstElementChild].filter(Boolean);
+
+        this.sections = Array.prototype.slice.call(nodes);
+        this.numPages = Math.max(1, this.sections.length);
+        this.pageTotal.textContent = this.numPages;
+        this.pageInput.max = this.numPages;
+
+        /* natural content width, measured before any zoom is applied */
+        var probe = this.idoc.querySelector('.sheet, #book, .pdfre-part > *') || this.idoc.body;
+        this.htmlNaturalWidth = (probe && probe.offsetWidth) || 794;
+
+        /* forward activity and input from inside the frame */
+        var pass = { passive: true };
+        ['mousemove', 'mousedown', 'touchstart', 'wheel', 'keydown'].forEach(function (ev) {
+            self.idoc.addEventListener(ev, function () { self.poke(); }, pass);
+        });
+        this.idoc.addEventListener('keydown', function (e) { self.handleKey(e); });
+        this.iwin.addEventListener('scroll', function () {
+            if (self._raf) return;
+            self._raf = requestAnimationFrame(function () {
+                self._raf = null;
+                self.htmlUpdateVisible();
+            });
+        }, pass);
+
+        if (o.protect) {
+            this.idoc.addEventListener('contextmenu', prevent);
+            ['copy', 'cut', 'dragstart', 'selectstart'].forEach(function (ev) {
+                self.idoc.addEventListener(ev, prevent);
+            });
+            this.idoc.addEventListener('keydown', Guards.onKey, true);
+        }
+
+        this.htmlRelayout();
+
+        var start = clamp(parseInt(o.page, 10) || 1, 1, this.numPages);
+        if (start > 1) this.htmlGoTo(start, true);
+
+        this.htmlUpdateVisible();
+        this.loaderEl.classList.add('is-hidden');
+        this.poke();
+        if (o.thumbnails) this.buildOutline();
+
+        if (typeof o.onReady === 'function') {
+            o.onReady({ mode: 'html', pages: this.numPages, sections: this.numPages });
+        }
+    };
+
+    Reader.prototype.htmlRelayout = function () {
+        if (!this.idoc || !this.iwin) return;
+
+        var availW = this.frameWrap.clientWidth || this.shell.clientWidth;
+        var narrow = availW < 720;
+        this.idoc.documentElement.classList.toggle('pdfre-narrow', narrow);
+
+        var z;
+        if (this.fitMode === 'fit-width' || this.fitMode === 'fit-page') {
+            z = narrow ? 1 : (availW - 40) / (this.htmlNaturalWidth || 794);
+        } else {
+            z = this.scale;
+        }
+        z = clamp(z, this.opts.minZoom, this.opts.maxZoom);
+        this.scale = z;
+
+        this.idoc.body.style.zoom = z;
+        this.zoomVal.textContent = Math.round(z * 100) + '%';
+    };
+
+    Reader.prototype.htmlGoTo = function (n, instant) {
+        if (!this.iwin || !this.sections.length) return;
+        n = clamp(parseInt(n, 10) || 1, 1, this.numPages);
+        var target = this.sections[n - 1];
+        if (!target) return;
+
+        var top = target.getBoundingClientRect().top + this.iwin.scrollY - 62;
+        this.iwin.scrollTo({ top: Math.max(0, top), behavior: instant ? 'auto' : 'smooth' });
+        this.pageInput.value = n;
+    };
+
+    Reader.prototype.htmlUpdateVisible = function () {
+        if (!this.iwin || !this.sections.length || this.destroyed) return;
+
+        var mark = 96, best = 1;
+        for (var i = 0; i < this.sections.length; i++) {
+            if (this.sections[i].getBoundingClientRect().top <= mark) best = i + 1;
+            else break;
+        }
+
+        if (best !== this.current) {
+            this.current = best;
+            if (document.activeElement !== this.pageInput) this.pageInput.value = best;
+            this.markThumb(best);
+            if (typeof this.opts.onPageChange === 'function') this.opts.onPageChange(best);
+        }
+    };
+
+    Reader.prototype.sectionLabel = function (el, i) {
+        var t = el.querySelector
+            ? el.querySelector('.ch-title, .cv-title, .dv-title, h1, h2, h3')
+            : null;
+        var name = t ? t.textContent : (el.textContent || '');
+        name = name.replace(/\s+/g, ' ').trim();
+        if (!name) name = 'Section ' + i;
+
+        var k = el.querySelector
+            ? el.querySelector('.ch-kicker, .cv-eyebrow, .dv-badge, .pill, .num')
+            : null;
+        var kicker = k ? k.textContent.replace(/\s+/g, ' ').trim() : '';
+        if (kicker === name) kicker = '';
+
+        return { name: name.slice(0, 110), kicker: kicker.slice(0, 34) };
+    };
+
+    Reader.prototype.buildOutline = function () {
+        var self = this;
+        var frag = document.createDocumentFragment();
+        this.thumbEls = new Array(this.numPages + 1);
+
+        for (var i = 1; i <= this.numPages; i++) {
+            var info = this.sectionLabel(this.sections[i - 1], i);
+            var b = document.createElement('button');
+            b.type = 'button';
+            b.className = 'pdfre-out';
+            b.setAttribute('data-page', i);
+            b.innerHTML =
+                (info.kicker ? '<span class="pdfre-out-k">' + escapeHtml(info.kicker) + '</span>' : '') +
+                '<span class="pdfre-out-t">' + escapeHtml(info.name) + '</span>';
+            b.addEventListener('click', (function (n) {
+                return function () { self.goTo(n); };
+            })(i));
+            this.thumbEls[i] = b;
+            frag.appendChild(b);
+        }
+
+        this.sidebarEl.classList.add('is-outline');
+        this.sidebarEl.innerHTML = '';
+        this.sidebarEl.appendChild(frag);
+        this.markThumb(this.current);
+    };
+
+    function escapeHtml(s) {
+        return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    /* ---------- search inside HTML notes ---------- */
+    Reader.prototype.htmlSearch = function (term) {
+        var self = this;
+        this.clearHtmlMarks();
+        this.matches = [];
+        this.matchIndex = -1;
+
+        if (!this.idoc) return;
+        if (term.length < 2) {
+            this.searchCount.textContent = '';
+            this.resultsEl.innerHTML = '<div class="pdfre-empty">Type at least two characters.</div>';
+            return;
+        }
+
+        var needle = term.toLowerCase();
+        var body = this.idoc.body;
+        var walker = this.idoc.createTreeWalker(body, NodeFilter.SHOW_TEXT, {
+            acceptNode: function (node) {
+                if (!node.nodeValue || !node.nodeValue.trim()) return NodeFilter.FILTER_REJECT;
+                var p = node.parentNode;
+                if (!p) return NodeFilter.FILTER_REJECT;
+                var tag = (p.nodeName || '').toLowerCase();
+                if (tag === 'script' || tag === 'style' || tag === 'mark') return NodeFilter.FILTER_REJECT;
+                return NodeFilter.FILTER_ACCEPT;
+            }
+        });
+
+        var targets = [], node;
+        while ((node = walker.nextNode())) {
+            if (node.nodeValue.toLowerCase().indexOf(needle) > -1) targets.push(node);
+            if (targets.length > 600) break;
+        }
+
+        var snippets = [];
+        for (var t = 0; t < targets.length; t++) {
+            var text = targets[t].nodeValue;
+            var lower = text.toLowerCase();
+            var rest = targets[t];
+            var consumed = 0;
+            var at;
+
+            while ((at = lower.indexOf(needle, consumed)) > -1) {
+                var local = at - consumed;
+                var after = rest.splitText(local);
+                var tail = after.splitText(needle.length);
+                var mk = this.idoc.createElement('mark');
+                mk.className = 'pdfre-mark';
+                mk.appendChild(this.idoc.createTextNode(after.nodeValue));
+                after.parentNode.replaceChild(mk, after);
+
+                this.matches.push(mk);
+                snippets.push({
+                    pre: text.slice(Math.max(0, at - 34), at),
+                    hit: text.substr(at, needle.length),
+                    post: text.slice(at + needle.length, at + needle.length + 46),
+                    page: this.sectionOf(mk)
+                });
+
+                rest = tail;
+                consumed = at + needle.length;
+                if (this.matches.length > 800) break;
+            }
+            if (this.matches.length > 800) break;
+        }
+
+        this.renderHtmlResults(term, snippets);
+        if (this.matches.length) this.stepMatch(1);
+    };
+
+    Reader.prototype.sectionOf = function (node) {
+        for (var i = this.sections.length - 1; i >= 0; i--) {
+            if (this.sections[i].contains && this.sections[i].contains(node)) return i + 1;
+        }
+        var top = node.getBoundingClientRect ? node.getBoundingClientRect().top : 0;
+        for (var j = this.sections.length - 1; j >= 0; j--) {
+            if (this.sections[j].getBoundingClientRect().top <= top) return j + 1;
+        }
+        return 1;
+    };
+
+    Reader.prototype.renderHtmlResults = function (term, snippets) {
+        var self = this;
+        this.searchCount.textContent = this.matches.length ? String(this.matches.length) : '0';
+
+        if (!this.matches.length) {
+            this.resultsEl.innerHTML = '<div class="pdfre-empty">No results for “' +
+                escapeHtml(term) + '”.</div>';
+            return;
+        }
+
+        var html = '', shown = Math.min(snippets.length, 120);
+        for (var i = 0; i < shown; i++) {
+            var s = snippets[i];
+            html += '<button type="button" class="pdfre-result" data-i="' + i + '">' +
+                '<span class="pdfre-result-pg">Section ' + s.page + '</span>…' +
+                escapeHtml(s.pre) + '<b>' + escapeHtml(s.hit) + '</b>' + escapeHtml(s.post) + '…</button>';
+        }
+        this.resultsEl.innerHTML = html;
+
+        this.resultsEl.querySelectorAll('.pdfre-result').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                self.matchIndex = parseInt(btn.getAttribute('data-i'), 10);
+                self.showMatch();
+            });
+        });
+    };
+
+    Reader.prototype.showHtmlMatch = function () {
+        var mk = this.matches[this.matchIndex];
+        if (!mk) return;
+
+        this.searchCount.textContent = (this.matchIndex + 1) + '/' + this.matches.length;
+        for (var i = 0; i < this.matches.length; i++) {
+            this.matches[i].classList.toggle('is-current', i === this.matchIndex);
+        }
+        this.resultsEl.querySelectorAll('.pdfre-result').forEach(function (b) {
+            b.classList.toggle('is-active', parseInt(b.getAttribute('data-i'), 10) === this.matchIndex);
+        }, this);
+
+        var top = mk.getBoundingClientRect().top + this.iwin.scrollY - this.iwin.innerHeight / 3;
+        this.iwin.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
+        this.htmlUpdateVisible();
+    };
+
+    Reader.prototype.clearHtmlMarks = function () {
+        if (!this.idoc) return;
+        var marks = this.idoc.querySelectorAll('mark.pdfre-mark');
+        for (var i = 0; i < marks.length; i++) {
+            var m = marks[i], p = m.parentNode;
+            if (!p) continue;
+            p.replaceChild(this.idoc.createTextNode(m.textContent), m);
+            p.normalize();
+        }
+        this.matches = [];
+        this.matchIndex = -1;
     };
 
     /* ==========================================================
@@ -1581,7 +2244,9 @@
 
             var d = n.dataset;
             var opts = {
-                src: d.pdfreSrc || '',
+                src: d.pdfreSrc || d.pdfreHtml || d.pdfreJson || '',
+                srcType: d.pdfreType || 'auto',
+                sectionSelector: d.pdfreSections || '',
                 srcEnc: d.pdfreEnc || '',
                 key: d.pdfreKey || '',
                 proxyUrl: d.pdfreProxy || '',
