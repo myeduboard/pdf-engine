@@ -1,5 +1,5 @@
 /* ==============================================================
-   PDF Reader Engine v1.1 — Secure Embedded Document Viewer
+   PDF Reader Engine v1.2 — Secure Embedded Document Viewer
    JS  — host this file on GitHub and serve via jsDelivr CDN:
    https://cdn.jsdelivr.net/gh/YOUR-USER/pdf-reader-engine@VERSION/pdfre.js
 
@@ -21,7 +21,7 @@
 (function (global) {
     'use strict';
 
-    var VERSION = '1.1.1';
+    var VERSION = '1.2.0';
     var CFG = global.PDFRE_CONFIG = global.PDFRE_CONFIG || {};
 
     /* ==========================================================
@@ -389,6 +389,19 @@
         jsonUrl: '',            // alias of src — a JSON contents file
         srcType: 'auto',        // 'auto' | 'pdf' | 'html' | 'manifest'
         sectionSelector: '',    // what counts as a "page" in HTML notes
+
+        /* HTML notes layout.
+           htmlReflow  false — keep the author's fixed page width and scroll
+                       sideways when it does not fit. true restores the old
+                       behaviour, where narrow screens released the sheet
+                       width and let the text reflow.
+           htmlFitMinZoom  fit-to-width will not shrink below this. An A4
+                       sheet fitted into a 390px phone lands at 0.44, which
+                       is 7px type — legible to nobody. The floor holds it
+                       at readable size and lets the overflow scroll.
+                       0 = always fit the width, 1 = never shrink. */
+        htmlReflow: false,
+        htmlFitMinZoom: 0.85,
         proxyUrl: '',
         headers: null,
         withCredentials: false,
@@ -905,7 +918,7 @@
     };
 
     Reader.prototype.relayout = function (keepAnchor) {
-        if (this.mode === 'html') return this.htmlRelayout();
+        if (this.mode === 'html') return this.htmlRelayout(keepAnchor);
         if (!this.pdf) return;
 
         var anchorPage = this.current;
@@ -1171,8 +1184,14 @@
                 sc.scrollBy({ top: vh * 0.9, behavior: 'smooth' }); break;
             case 'ArrowUp': case 'PageUp':
                 sc.scrollBy({ top: -vh * 0.9, behavior: 'smooth' }); break;
-            case 'ArrowRight': this.goTo(this.current + 1); break;
-            case 'ArrowLeft': this.goTo(this.current - 1); break;
+            case 'ArrowRight':
+                if (e.shiftKey) sc.scrollBy({ left: 120, behavior: 'smooth' });
+                else this.goTo(this.current + 1);
+                break;
+            case 'ArrowLeft':
+                if (e.shiftKey) sc.scrollBy({ left: -120, behavior: 'smooth' });
+                else this.goTo(this.current - 1);
+                break;
             case 'Home': this.goTo(1); break;
             case 'End': this.goTo(this.numPages); break;
             case '+': case '=': this.zoomBy(1.25); break;
@@ -1690,20 +1709,49 @@
         'body > section, .pdfre-part > section';
 
     var HTML_RESET =
-        'html,body{height:auto !important;min-height:0 !important;max-height:none !important;' +
-        'overflow-x:hidden !important}' +
-        'body{margin:0 !important;padding:66px 0 96px 0 !important;' +
+        /* The frame scrolls in both directions. Vertical is the reading
+           axis; horizontal only appears once the document is genuinely
+           wider than the viewport — zoomed in, or a fixed A4 sheet on a
+           phone — and then it can be panned by drag, wheel or scrollbar. */
+        'html{height:auto !important;min-height:0 !important;max-height:none !important;' +
+        'overflow-x:auto !important;overflow-y:auto !important;' +
+        '-webkit-text-size-adjust:100% !important;text-size-adjust:100% !important}' +
+        'body{height:auto !important;min-height:0 !important;max-height:none !important;' +
+        'overflow:visible !important;' +
+        'margin:0 !important;padding:66px 0 96px 0 !important;' +
         '-webkit-user-select:none;-moz-user-select:none;user-select:none;' +
         '-webkit-touch-callout:none}' +
+        /* Wrapper around everything the notes file contributed. fit-content
+           with a 100% floor means: as wide as the content when the content
+           is wider than the frame, otherwise exactly as wide as the frame.
+           That is what stops a centred sheet from having its left edge cut
+           off and made unreachable once it overflows. */
+        '.pdfre-doc{display:block;width:-moz-fit-content;width:fit-content;' +
+        'min-width:100%;margin:0 auto;box-sizing:border-box}' +
         '#app,#canvas,#viewer,#page,.viewport,.wrapper{display:block !important;' +
         'height:auto !important;max-height:none !important;overflow:visible !important}' +
         'img,svg,canvas,figure{-webkit-user-drag:none;user-drag:none}' +
         '::selection{background:transparent}' +
         'html.pdfre-idle{cursor:none}' +
-        'html.pdfre-narrow .sheet{width:auto !important;max-width:none !important;' +
+        /* pannable while the document overflows sideways */
+        'html.pdfre-panx body{cursor:grab}' +
+        'html.pdfre-panx.pdfre-panning body{cursor:grabbing}' +
+        'html.pdfre-panning *{pointer-events:none}' +
+        /* visible, unobtrusive scrollbars — macOS and iOS hide overlay
+           scrollbars entirely, which leaves no hint that sideways
+           scrolling is available */
+        'html::-webkit-scrollbar{width:11px;height:11px}' +
+        'html::-webkit-scrollbar-track{background:rgba(0,0,0,.05)}' +
+        'html::-webkit-scrollbar-thumb{background:rgba(0,0,0,.28);border-radius:7px;' +
+        'border:2px solid transparent;background-clip:content-box}' +
+        'html::-webkit-scrollbar-thumb:hover{background:rgba(0,0,0,.45);' +
+        'border:2px solid transparent;background-clip:content-box}' +
+        'html{scrollbar-width:thin}' +
+        /* opt-in reflow, kept for anyone who preferred the old behaviour */
+        'html.pdfre-reflow .sheet{width:auto !important;max-width:none !important;' +
         'margin:0 !important;padding:20px 15px !important;box-shadow:none !important}' +
-        'html.pdfre-narrow #canvas{padding:0 !important;background:none !important}' +
-        'html.pdfre-narrow body>*{max-width:100% !important}' +
+        'html.pdfre-reflow #canvas{padding:0 !important;background:none !important}' +
+        'html.pdfre-reflow body>*{max-width:100% !important}' +
         'mark.pdfre-mark{background:rgba(251,188,5,.55);color:inherit;padding:0;border-radius:2px}' +
         'mark.pdfre-mark.is-current{background:rgba(255,112,67,.7);box-shadow:0 0 0 2px rgba(255,112,67,.35)}' +
         '.pdfre-wm{position:fixed;inset:0;pointer-events:none;z-index:2147483000;' +
@@ -1879,7 +1927,9 @@
             '<meta name="viewport" content="width=device-width,initial-scale=1">' +
             heads.join('\n') +
             '<style>' + HTML_RESET + '</style>' +
-            '</head><body>' + bodies.join('\n') + wmDiv + '</body></html>';
+            '</head><body>' +
+            '<div class="pdfre-doc">' + bodies.join('\n') + '</div>' +
+            wmDiv + '</body></html>';
 
         var frame = document.createElement('iframe');
         frame.className = 'pdfre-frame';
@@ -1994,24 +2044,9 @@
         this.pageTotal.textContent = this.numPages;
         this.pageInput.max = this.numPages;
 
-        /* Natural content width, measured before any zoom is applied.
-           These are tried in order — querySelector with a selector list
-           returns whichever matches first in tree order, which would pick
-           the full-width wrapper instead of the fixed-width page sheet. */
-        var probeSels = ['.sheet', '.page', '.paper', '.a4', '#book', 'article', 'main'];
-        var probe = null;
-        for (var pi = 0; pi < probeSels.length; pi++) {
-            probe = this.idoc.querySelector(probeSels[pi]);
-            if (probe) break;
-        }
-
-        var frameW = this.frameWrap.clientWidth || this.shell.clientWidth || 0;
-        var natural = probe ? probe.offsetWidth : 0;
-
-        /* If the content simply fills whatever width it is given there is no
-           fixed page to fit, so "fit to width" means 100%. */
-        if (!natural || (frameW && Math.abs(natural - frameW) < 8)) natural = 0;
-        this.htmlNaturalWidth = natural;
+        this.htmlDoc = this.idoc.querySelector('.pdfre-doc') || this.idoc.body;
+        this.idoc.documentElement.classList.toggle('pdfre-reflow', !!o.htmlReflow);
+        this.measureHtmlNatural();
 
         /* forward activity and input from inside the frame */
         var pass = { passive: true };
@@ -2035,6 +2070,7 @@
             this.idoc.addEventListener('keydown', Guards.onKey, true);
         }
 
+        this.installFrameGestures();
         this.htmlRelayout();
 
         var start = clamp(parseInt(o.page, 10) || 1, 1, this.numPages);
@@ -2050,26 +2086,224 @@
         }
     };
 
-    Reader.prototype.htmlRelayout = function () {
+    /* The widest thing the notes file wants to be, in unzoomed CSS pixels.
+       Measured with the zoom lifted, because browsers disagree about
+       whether offsetWidth inside a zoomed subtree is the layout value or
+       the painted one. A fixed page sheet reports its own width; fluid
+       markup reports the frame width, which means there is nothing to fit
+       and zoom stays at 100%. scrollWidth catches anything sticking out of
+       the sheet, such as a wide table, so that it can be reached. */
+    Reader.prototype.measureHtmlNatural = function () {
+        if (!this.idoc || !this.htmlDoc) return 0;
+
+        var doc = this.htmlDoc;
+        var prevZoom = this.idoc.body.style.zoom;
+        var prevTransform = doc.style.transform;
+
+        this.idoc.body.style.zoom = '';
+        doc.style.transform = '';
+        doc.style.minWidth = '';
+
+        /* The available width has to come from body, not the wrapper.
+           The wrapper is fit-content, so once the notes overflow it its
+           clientWidth *is* the content width — comparing the two would
+           always look like a match and fit-to-width would collapse to
+           100%. body stays at viewport width whatever overflows it. */
+        var frameW = this.idoc.body.clientWidth || this.frameWrap.clientWidth || 0;
+        var natural = Math.max(doc.scrollWidth || 0, doc.offsetWidth || 0);
+
+        /* Anything sticking out of the wrapper — a table wider than the
+           sheet — cannot be reached by scrolling unless the wrapper is
+           pinned to it. Otherwise leave the width to fit-content. */
+        doc.style.minWidth = (natural - (doc.offsetWidth || 0) > 2)
+            ? natural + 'px'
+            : '';
+
+        doc.style.transform = prevTransform;
+        this.idoc.body.style.zoom = prevZoom;
+
+        /* Content that simply fills whatever width it is given has no fixed
+           page to fit against, so "fit to width" means 100%. */
+        if (frameW && natural - frameW < 8) natural = 0;
+
+        this.htmlNaturalWidth = natural;
+        return natural;
+    };
+
+    var SUPPORTS_CSS_ZOOM = (function () {
+        try {
+            return !!(global.CSS && CSS.supports && CSS.supports('zoom', '2'));
+        } catch (e) { return true; }
+    })();
+
+    Reader.prototype.applyHtmlZoom = function (z) {
+        var body = this.idoc.body, doc = this.htmlDoc;
+
+        if (SUPPORTS_CSS_ZOOM) {
+            body.style.zoom = z === 1 ? '' : z;
+            return;
+        }
+
+        /* Firefox before 126 has no CSS zoom. transform scales the paint
+           but not the layout box, so the scrollable area is set by hand.
+           The pre-scale width must not fall below the natural content
+           width, or a fixed sheet gets squeezed instead of scaled. */
+        doc.style.transformOrigin = '0 0';
+        doc.style.transform = z === 1 ? '' : 'scale(' + z + ')';
+        doc.style.width = z === 1
+            ? ''
+            : Math.round(Math.max(this.htmlNaturalWidth || 0, body.clientWidth / z)) + 'px';
+        body.style.height = z === 1 ? '' : Math.round(doc.offsetHeight * z) + 'px';
+        body.style.width = z === 1 ? '' : Math.round(doc.offsetWidth * z) + 'px';
+    };
+
+    Reader.prototype.htmlRelayout = function (keepAnchor) {
         if (!this.idoc || !this.iwin) return;
+        var o = this.opts;
 
         var availW = this.frameWrap.clientWidth || this.shell.clientWidth;
-        var narrow = availW < 720;
-        this.idoc.documentElement.classList.toggle('pdfre-narrow', narrow);
+
+        /* Remember the point of the document we were looking at, as a
+           fraction of the content size, so a zoom change does not throw
+           the reader back to the top or off to one side. Fractions of the
+           *content* rather than of the max scroll offset — the max offset
+           changes shape as the zoom changes and does not map back cleanly. */
+        var cx = 0, cy = 0, hadAnchor = false;
+        if (keepAnchor) {
+            var de = this.idoc.documentElement;
+            cx = (this.iwin.scrollX + this.iwin.innerWidth / 2) /
+                Math.max(1, de.scrollWidth);
+            cy = this.iwin.scrollY / Math.max(1, de.scrollHeight);
+            hadAnchor = true;
+        }
+
+        /* Re-measuring lifts the zoom and forces a reflow, so it is worth
+           doing only when the frame itself changed size — not on every
+           zoom step, and never mid-pinch. */
+        if (this._lastFrameW !== availW) {
+            this._lastFrameW = availW;
+            this.measureHtmlNatural();
+        }
 
         var z;
         if (this.fitMode === 'fit-width' || this.fitMode === 'fit-page') {
-            z = (narrow || !this.htmlNaturalWidth)
-                ? 1
-                : (availW - 40) / this.htmlNaturalWidth;
+            z = this.htmlNaturalWidth ? (availW - 40) / this.htmlNaturalWidth : 1;
+            /* Do not shrink a page sheet into illegibility on a phone —
+               hold a readable floor and let it scroll sideways instead. */
+            if (o.htmlFitMinZoom) z = Math.max(z, Math.min(1, o.htmlFitMinZoom));
         } else {
             z = this.scale;
         }
-        z = clamp(z, this.opts.minZoom, this.opts.maxZoom);
+        z = clamp(z, o.minZoom, o.maxZoom);
         this.scale = z;
 
-        this.idoc.body.style.zoom = z;
+        this.applyHtmlZoom(z);
         this.zoomVal.textContent = Math.round(z * 100) + '%';
+
+        var self = this;
+        var settle = function () {
+            if (self.destroyed || !self.iwin) return;
+            self.flagHtmlOverflow();
+            if (!hadAnchor) return;
+            var d = self.idoc.documentElement;
+            var mx = Math.max(0, d.scrollWidth - self.iwin.innerWidth);
+            var my = Math.max(0, d.scrollHeight - self.iwin.innerHeight);
+            self.iwin.scrollTo({
+                left: clamp(cx * d.scrollWidth - self.iwin.innerWidth / 2, 0, mx),
+                top: clamp(cy * d.scrollHeight, 0, my),
+                behavior: 'auto'
+            });
+        };
+        if (global.requestAnimationFrame) requestAnimationFrame(settle);
+        else settle();
+    };
+
+    /* Marks the frame as pannable only while there is somewhere to pan. */
+    Reader.prototype.flagHtmlOverflow = function () {
+        if (!this.idoc || !this.iwin) return false;
+        var de = this.idoc.documentElement;
+        var over = de.scrollWidth - this.iwin.innerWidth > 4;
+        de.classList.toggle('pdfre-panx', over);
+        return over;
+    };
+
+    /* Drag to pan, pinch to zoom, Ctrl+wheel to zoom, Shift+wheel sideways
+       — installed inside the frame, since that is where the scrolling
+       actually happens in notes mode. */
+    Reader.prototype.installFrameGestures = function () {
+        var self = this, doc = this.idoc, win = this.iwin;
+
+        /* ---- drag to pan ---- */
+        var down = false, moved = false, sx0 = 0, sy0 = 0, ox = 0, oy = 0;
+
+        doc.addEventListener('mousedown', function (e) {
+            if (e.button !== 0 || !self.flagHtmlOverflow()) return;
+            if (e.target && e.target.closest && e.target.closest('a,button,input,select,textarea')) return;
+            down = true; moved = false;
+            sx0 = e.clientX; sy0 = e.clientY;
+            ox = win.scrollX; oy = win.scrollY;
+        });
+
+        doc.addEventListener('mousemove', function (e) {
+            if (!down) return;
+            var dx = e.clientX - sx0, dy = e.clientY - sy0;
+            if (!moved && Math.abs(dx) + Math.abs(dy) < 4) return;
+            if (!moved) {
+                moved = true;
+                doc.documentElement.classList.add('pdfre-panning');
+            }
+            e.preventDefault();
+            win.scrollTo(ox - dx, oy - dy);
+        });
+
+        ['mouseup', 'mouseleave', 'blur'].forEach(function (ev) {
+            doc.addEventListener(ev, function () {
+                down = false;
+                doc.documentElement.classList.remove('pdfre-panning');
+            });
+        });
+
+        /* ---- Ctrl+wheel zoom, Shift+wheel sideways ---- */
+        doc.addEventListener('wheel', function (e) {
+            if (e.ctrlKey || e.metaKey) {
+                e.preventDefault();
+                self.zoomBy(e.deltaY < 0 ? 1.1 : 1 / 1.1);
+            } else if (e.shiftKey && !e.deltaX) {
+                e.preventDefault();
+                win.scrollBy(e.deltaY, 0);
+            }
+        }, { passive: false });
+
+        /* ---- pinch zoom ---- */
+        var startDist = 0, startScale = 1, pinching = false;
+        function dist(t) {
+            return Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+        }
+
+        doc.addEventListener('touchstart', function (e) {
+            if (e.touches.length !== 2) return;
+            pinching = true;
+            startDist = dist(e.touches);
+            startScale = self.scale;
+        }, { passive: true });
+
+        doc.addEventListener('touchmove', function (e) {
+            if (!pinching || e.touches.length !== 2) return;
+            e.preventDefault();
+            self.fitMode = null;
+            self.scale = clamp(startScale * dist(e.touches) / (startDist || 1),
+                self.opts.minZoom, self.opts.maxZoom);
+            self.applyHtmlZoom(self.scale);
+            self.zoomVal.textContent = Math.round(self.scale * 100) + '%';
+        }, { passive: false });
+
+        doc.addEventListener('touchend', function () {
+            if (!pinching) return;
+            pinching = false;
+            self.flagHtmlOverflow();
+            self.setFitIcon();
+            self.htmlUpdateVisible();
+        });
     };
 
     Reader.prototype.htmlGoTo = function (n, instant) {
@@ -2316,6 +2550,10 @@
                 src: d.pdfreSrc || d.pdfreHtml || d.pdfreJson || '',
                 srcType: d.pdfreType || 'auto',
                 sectionSelector: d.pdfreSections || '',
+                htmlReflow: d.pdfreReflow === 'true',
+                htmlFitMinZoom: d.pdfreFitMin !== undefined
+                    ? (parseFloat(d.pdfreFitMin) || 0)
+                    : 0.85,
                 srcEnc: d.pdfreEnc || '',
                 key: d.pdfreKey || '',
                 proxyUrl: d.pdfreProxy || '',
