@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PDF Reader Engine — demo</title>
+<link rel="stylesheet" href="pdfre.css">
+<style>
+  body{
+    margin:0;padding:32px 20px 60px;background:#141517;color:#e8eaed;
+    font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  }
+  .wrap{max-width:1040px;margin:0 auto}
+  h1{font-size:20px;font-weight:600;margin:0 0 4px}
+  p.lede{color:#9aa0a6;font-size:13.5px;margin:0 0 22px}
+  .bar{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:20px}
+  input,select{
+    padding:10px 12px;font:13.5px/1.3 ui-monospace,Menlo,monospace;color:#e8eaed;
+    background:#202124;border:1px solid rgba(255,255,255,.14);border-radius:8px;outline:0;
+  }
+  input{flex:1 1 380px;min-width:0}
+  input:focus,select:focus{border-color:#8ab4f8}
+  button{
+    padding:10px 20px;font:600 13.5px/1.3 inherit;color:#17181a;background:#8ab4f8;
+    border:0;border-radius:999px;cursor:pointer;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>PDF Reader Engine</h1>
+  <p class="lede">Paste any CORS-enabled PDF URL and open it. Serve this folder over http (<code>python3 -m http.server</code>) rather than opening the file directly, or the browser will block the fetch.</p>
+
+  <div class="bar">
+    <input id="url" type="text" spellcheck="false"
+           value="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/web/compressed.tracemonkey-pldi-09.pdf">
+    <select id="theme">
+      <option value="dark">Dark</option>
+      <option value="light">Light</option>
+    </select>
+    <select id="hide">
+      <option value="always">Hide controls when idle</option>
+      <option value="fullscreen">Hide only in fullscreen</option>
+      <option value="never">Always show controls</option>
+    </select>
+    <button id="open">Open</button>
+  </div>
+
+  <div id="viewer"></div>
+</div>
+
+<script src="pdfre.js"></script>
+<script>
+var reader = null;
+
+function open_() {
+  if (reader) reader.destroy();
+  reader = window.initPdfReader('viewer', {
+    src: document.getElementById('url').value.trim(),
+    title: 'Demo document',
+    subtitle: 'PDF Reader Engine v' + window.PDFRE.version,
+    theme: document.getElementById('theme').value,
+    autohide: document.getElementById('hide').value,
+    height: '78vh',
+    watermark: '',
+    onReady: function (i) { console.log('ready —', i.pages, 'pages'); },
+    onError: function (e) { console.warn(e); }
+  });
+}
+
+document.getElementById('open').addEventListener('click', open_);
+document.getElementById('url').addEventListener('keydown', function (e) {
+  if (e.key === 'Enter') open_();
+});
+open_();
+</script>
+</body>
+</html>
