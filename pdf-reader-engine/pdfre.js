@@ -395,13 +395,16 @@
                        sideways when it does not fit. true restores the old
                        behaviour, where narrow screens released the sheet
                        width and let the text reflow.
-           htmlFitMinZoom  fit-to-width will not shrink below this. An A4
-                       sheet fitted into a 390px phone lands at 0.44, which
-                       is 7px type — legible to nobody. The floor holds it
-                       at readable size and lets the overflow scroll.
-                       0 = always fit the width, 1 = never shrink. */
+           htmlFitMinZoom  a floor under fit-to-width, off by default. At 0
+                       the notes shrink as far as they need to so the whole
+                       page width is visible when the reader opens, however
+                       narrow the screen — sideways scrolling then only
+                       appears once you zoom in. Raise it (0.85 is a
+                       reasonable try) if you would rather the notes stayed
+                       legible on a phone and panned sideways from the
+                       start. minZoom still applies underneath. */
         htmlReflow: false,
-        htmlFitMinZoom: 0.85,
+        htmlFitMinZoom: 0,
         proxyUrl: '',
         headers: null,
         withCredentials: false,
@@ -1669,6 +1672,8 @@
         clearTimeout(this._toastTimer);
         clearTimeout(this._resizeT);
         clearInterval(this._paranoidTimer);
+        (this._settleTimers || []).forEach(clearTimeout);
+        this._settleTimers = [];
         if (this._raf) cancelAnimationFrame(this._raf);
 
         global.removeEventListener('resize', this.onResize);
@@ -2072,6 +2077,7 @@
 
         this.installFrameGestures();
         this.htmlRelayout();
+        this.watchHtmlSettle();
 
         var start = clamp(parseInt(o.page, 10) || 1, 1, this.numPages);
         if (start > 1) this.htmlGoTo(start, true);
@@ -2185,16 +2191,22 @@
             this.measureHtmlNatural();
         }
 
-        var z;
-        if (this.fitMode === 'fit-width' || this.fitMode === 'fit-page') {
+        var z, fitting = (this.fitMode === 'fit-width' || this.fitMode === 'fit-page');
+        if (fitting) {
             z = this.htmlNaturalWidth ? (availW - 40) / this.htmlNaturalWidth : 1;
-            /* Do not shrink a page sheet into illegibility on a phone —
-               hold a readable floor and let it scroll sideways instead. */
+            /* An optional legibility floor. Off by default: the point of
+               fitting is that the whole page width is visible when the
+               reader opens, however narrow the screen. */
             if (o.htmlFitMinZoom) z = Math.max(z, Math.min(1, o.htmlFitMinZoom));
         } else {
             z = this.scale;
         }
-        z = clamp(z, o.minZoom, o.maxZoom);
+
+        /* minZoom guards what the zoom-out button will do. An automatic
+           fit is allowed under it, otherwise a page wider than minZoom can
+           accommodate would open already overflowing — which is the one
+           thing fitting exists to prevent. */
+        z = clamp(z, fitting ? Math.min(o.minZoom, 0.1) : o.minZoom, o.maxZoom);
         this.scale = z;
 
         this.applyHtmlZoom(z);
@@ -2216,6 +2228,37 @@
         };
         if (global.requestAnimationFrame) requestAnimationFrame(settle);
         else settle();
+    };
+
+    /* The first measurement happens as soon as the DOM is parsed, which is
+       deliberately early — waiting on the load event would leave the notes
+       sitting unstyled and unscaled for as long as the slowest webfont
+       takes. The cost is that a late image or font can change how wide the
+       content really is, so the fit is taken again as things settle. Only
+       while the reader is still in a fit mode: once the reader has chosen
+       a zoom, that choice is theirs and is not overridden. */
+    Reader.prototype.watchHtmlSettle = function () {
+        var self = this;
+        this._settleTimers = [];
+
+        function refit() {
+            if (self.destroyed || self.mode !== 'html' || !self.idoc) return;
+            if (!self.fitMode) return;
+            self._lastFrameW = null;      // force a fresh measurement
+            self.htmlRelayout(true);
+        }
+
+        if (this.iwin) this.iwin.addEventListener('load', refit);
+
+        try {
+            if (this.idoc.fonts && this.idoc.fonts.ready) {
+                this.idoc.fonts.ready.then(refit).catch(function () { });
+            }
+        } catch (e) { /* no font loading API — the timers below cover it */ }
+
+        [140, 700, 1800].forEach(function (ms) {
+            self._settleTimers.push(setTimeout(refit, ms));
+        });
     };
 
     /* Marks the frame as pannable only while there is somewhere to pan. */
@@ -2551,9 +2594,7 @@
                 srcType: d.pdfreType || 'auto',
                 sectionSelector: d.pdfreSections || '',
                 htmlReflow: d.pdfreReflow === 'true',
-                htmlFitMinZoom: d.pdfreFitMin !== undefined
-                    ? (parseFloat(d.pdfreFitMin) || 0)
-                    : 0.85,
+                htmlFitMinZoom: parseFloat(d.pdfreFitMin) || 0,
                 srcEnc: d.pdfreEnc || '',
                 key: d.pdfreKey || '',
                 proxyUrl: d.pdfreProxy || '',
