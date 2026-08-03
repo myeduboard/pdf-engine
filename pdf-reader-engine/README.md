@@ -1,12 +1,18 @@
-# PDF Reader Engine v1
+# PDF Reader Engine v1.1
 
-A secure, embeddable PDF viewer for Blogger, WordPress and plain HTML.
-Host once on GitHub → serve anywhere via jsDelivr CDN.
+A secure, embeddable document viewer for Blogger, WordPress and plain
+HTML. Host once on GitHub → serve anywhere via jsDelivr CDN.
 
-Pages are rasterised to `<canvas>` with pdf.js, so the browser's own PDF
-plugin — and its download and print buttons — never appear. There is no
-`<iframe src>` and no `<embed>`, so the file address is not sitting in
-your page markup.
+It reads two kinds of source:
+
+- **PDF** — pages are rasterised to `<canvas>` with pdf.js, so the
+  browser's own PDF plugin, and its download and print buttons, never
+  appear.
+- **HTML notes** — a self-contained notes or book file is mounted in a
+  sandboxed frame with its own styling intact, chaptered by section.
+
+Either way there is no `<iframe src>` and no `<embed>` pointing at your
+file, so the address is not sitting in your page markup.
 
 ```
 pdf-reader-engine/
@@ -14,6 +20,9 @@ pdf-reader-engine/
 ├── pdfre.js                     ← the engine
 ├── embed-snippet.html           ← ready-to-paste code for any site
 ├── demo.html                    ← local test page
+├── examples/
+│   ├── contents.json            ← sample contents file for merged notes
+│   └── veterinary-microbiology-part-1.html
 ├── tools/
 │   └── link-encoder.html        ← turn a PDF URL into a token + snippet
 ├── proxy/
@@ -31,6 +40,11 @@ pdf-reader-engine/
   Safari, where the API is unavailable.
 - **Continuous scroll** with page virtualisation — only nearby pages hold
   a canvas, so a 400-page file stays responsive.
+- **HTML notes as a source** — point it at a `.html` study-notes file and
+  it renders inside a sandboxed frame: the notes file's own scripts never
+  run, its styling is preserved, and a contents sidebar is built from the
+  document's sections. A JSON contents file can merge several notes files
+  into one continuous book.
 - **Page thumbnails**, jump-to-page, zoom, fit-to-width / fit-to-page,
   90° rotation, pinch zoom, Ctrl+wheel zoom, full keyboard control.
 - **Search** across the document with result snippets and highlighting.
@@ -51,18 +65,18 @@ pdf-reader-engine/
 ```bash
 git init
 git add .
-git commit -m "v1.0.0 — initial CDN release"
+git commit -m "v1.1.0 — PDF and HTML notes"
 git remote add origin https://github.com/YOUR-USER/pdf-reader-engine.git
 git push -u origin main
-git tag v1.0.0
-git push origin v1.0.0
+git tag v1.1.0
+git push origin v1.1.0
 ```
 
 **2. CDN URLs** (live about ten minutes after tagging)
 
 ```
-https://cdn.jsdelivr.net/gh/YOUR-USER/pdf-reader-engine@1.0.0/pdfre.css
-https://cdn.jsdelivr.net/gh/YOUR-USER/pdf-reader-engine@1.0.0/pdfre.js
+https://cdn.jsdelivr.net/gh/YOUR-USER/pdf-reader-engine@1.1.0/pdfre.css
+https://cdn.jsdelivr.net/gh/YOUR-USER/pdf-reader-engine@1.1.0/pdfre.js
 ```
 
 > Always pin a version tag. Never use `@latest` in production.
@@ -72,8 +86,8 @@ https://cdn.jsdelivr.net/gh/YOUR-USER/pdf-reader-engine@1.0.0/pdfre.js
 Blogger: Theme → Edit HTML, just before `</head>`.
 
 ```html
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/YOUR-USER/pdf-reader-engine@1.0.0/pdfre.css">
-<script defer src="https://cdn.jsdelivr.net/gh/YOUR-USER/pdf-reader-engine@1.0.0/pdfre.js"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/YOUR-USER/pdf-reader-engine@1.1.0/pdfre.css">
+<script defer src="https://cdn.jsdelivr.net/gh/YOUR-USER/pdf-reader-engine@1.1.0/pdfre.js"></script>
 ```
 
 **4. Reader block — once per post**
@@ -87,6 +101,69 @@ Blogger: Theme → Edit HTML, just before `</head>`.
 
 That is the whole integration. `embed-snippet.html` has four more
 methods, including the JavaScript API and proxy mode.
+
+## HTML notes instead of a PDF
+
+Point `src` at an HTML file and the engine switches modes on its own —
+it sniffs the bytes, so no extra setting is needed.
+
+```html
+<div data-pdfre
+     data-pdfre-src="https://cdn.jsdelivr.net/gh/YOU/notes@v1/microbiology.html"
+     data-pdfre-title="Veterinary Microbiology"
+     data-pdfre-subtitle="ICAR eCourses · 20 chapters"
+     data-pdfre-height="80vh"></div>
+```
+
+What happens to the file:
+
+- It is parsed, then `<script>`, `<iframe>`, `<object>`, `<form>` and
+  every `on*` handler are stripped. The `<style>` blocks and font links
+  are kept, so the notes look exactly as authored.
+- The result is mounted with `srcdoc` into an iframe sandboxed to
+  `allow-same-origin allow-popups`. Nothing in the notes file can
+  execute, and the address never appears as a frame `src`.
+- Each top-level `<section>` becomes a "page": the dock counts them, the
+  arrows step through them, and the sidebar becomes a contents list built
+  from each section's heading and kicker. If a file has no sections, the
+  engine falls back to `h1`/`h2` headings. Override with
+  `sectionSelector` if your markup differs.
+- Zoom scales the whole document; on narrow screens the fixed A4 sheet
+  width is released so text reflows to the phone instead of shrinking.
+- Search highlights matches in place with `<mark>` and lists them by
+  section.
+- Selection, copy, right-click and printing are blocked exactly as in PDF
+  mode, and the watermark is tiled behind the text.
+
+### Merging several notes files
+
+Give it a JSON contents file instead and it stitches them into one
+continuous document:
+
+```json
+{
+  "title": "Veterinary Microbiology — Complete",
+  "subtitle": "ICAR eCourses",
+  "documents": [
+    { "title": "Part 1 — General",    "url": "part-1.html" },
+    { "title": "Part 2 — Systematic", "url": "part-2.html" }
+  ]
+}
+```
+
+```html
+<div data-pdfre
+     data-pdfre-json="https://cdn.jsdelivr.net/gh/YOU/notes@v1/contents.json"
+     data-pdfre-height="80vh"></div>
+```
+
+Relative URLs resolve against the contents file. Duplicate stylesheets
+are deduplicated, each part gets a divider heading, and the sections of
+every part flow into one contents list. `title` and `subtitle` from the
+contents file override the ones set on the element.
+
+If auto-detection ever guesses wrong, force it with
+`data-pdfre-type="html"`, `"pdf"` or `"manifest"`.
 
 ## Hiding the source address
 
@@ -155,7 +232,10 @@ heuristic and can misfire on unusual window setups.
 
 | Setting | Default | What it does |
 |---|---|---|
-| `src` | `''` | Plain PDF URL |
+| `src` | `''` | Plain document URL — PDF, HTML notes or JSON contents |
+| `htmlUrl` / `jsonUrl` | `''` | Aliases of `src`, for readability |
+| `srcType` | `'auto'` | `auto`, `pdf`, `html`, `manifest` |
+| `sectionSelector` | `''` | What counts as a page in HTML notes |
 | `srcEnc` | `''` | Obfuscated token from the link encoder |
 | `key` | `''` | Key the token was encoded with |
 | `proxyUrl` | `''` | Proxy endpoint; use alone for full privacy |
@@ -189,13 +269,13 @@ heuristic and can misfire on unusual window setups.
 ```js
 var reader = window.initPdfReader('my-container', { src: '…' });
 
-reader.goTo(12);
+reader.goTo(12);                   // page, or section in HTML mode
 reader.setZoom('fit-page');        // or 1.5
-reader.rotate(90);
+reader.rotate(90);                 // PDF mode only
 reader.toggleFullscreen(true);
 reader.toggleSidebar();
 reader.toggleSearch(true);
-reader.getState();                 // { page, pages, zoom, rotation, fullscreen }
+reader.getState();                 // { mode, page, pages, zoom, rotation, fullscreen }
 reader.destroy();
 ```
 
@@ -243,6 +323,14 @@ They also stay put while the search panel is open, by design.
 
 **Slow on very long documents** — lower `maxCanvasScale` to `1.5` and
 `renderBuffer` to `1`.
+
+**HTML notes show one section only** — the file's top-level elements do
+not match the default selector. Set `sectionSelector` to whatever wraps
+each chapter, for example `'.chapter'` or `'#book > section'`.
+
+**HTML notes look unstyled** — the styling lived in an external
+stylesheet that is not reachable. Inline the CSS into a `<style>` block
+in the notes file; self-contained files are what this mode expects.
 
 ## Updating the engine
 
