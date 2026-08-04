@@ -133,6 +133,12 @@ document.addEventListener('DOMContentLoaded', function () {
     // htmlReflow:     false,          // true = reflow text on narrow screens
     // htmlFitMinZoom: 0,              // floor under the fit; 0 = always fit
 
+    /* ---- chrome and copying ---- */
+    // barOpacity:  0.58,              // 0 = invisible bars, 1 = solid
+    // chrome:      'visible',         // 'hidden' = start with bars dismissed
+    // tapToToggle: true,              // tap the page to hide/show the bars
+    // allowCopy:   true,              // copy button; copies the screen only
+
     /* ---- presentation ---- */
     title:    'Physics — Unit 4',
     subtitle: 'NCERT · 42 pages',
@@ -208,6 +214,10 @@ document.addEventListener('DOMContentLoaded', function () {
   data-pdfre-type         auto | pdf | html | manifest
   data-pdfre-sections     CSS selector for chapters in HTML notes
   data-pdfre-fitmin       floor under the fit for notes (default 0)
+  data-pdfre-bar-opacity  translucency of the bars, 0-1
+  data-pdfre-chrome       "hidden" to start with the bars dismissed
+  data-pdfre-tap-toggle   "false" to stop taps toggling the bars
+  data-pdfre-copy         "false" to remove the copy button
   data-pdfre-reflow       "true" to reflow notes instead of scrolling
   data-pdfre-enc          obfuscated token (use instead of src)
   data-pdfre-key          key the token was encoded with
