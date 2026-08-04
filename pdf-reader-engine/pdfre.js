@@ -21,7 +21,7 @@
 (function (global) {
     'use strict';
 
-    var VERSION = '1.2.0';
+    var VERSION = '1.3.0';
     var CFG = global.PDFRE_CONFIG = global.PDFRE_CONFIG || {};
 
     /* ==========================================================
@@ -276,6 +276,13 @@
         close: '<path d="M6 6l12 12M18 6L6 18"/>',
         up: '<path d="M6 14.5l6-6 6 6"/>',
         down: '<path d="M6 9.5l6 6 6-6"/>',
+        copy: '<rect x="8.5" y="8.5" width="11" height="12" rx="2"/>'
+            + '<path d="M15.5 5.5h-11a1 1 0 0 0-1 1v11"/>',
+        eyeOff: '<path d="M4 4l16 16M9.9 5.2A8.6 8.6 0 0 1 12 5c5 0 8.5 4.4 9.5 7'
+            + '-.4 1-1.3 2.4-2.6 3.7M6.1 7.3C4.4 8.6 3.1 10.5 2.5 12c1 2.6 4.5 7 9.5 7'
+            + ' 1.5 0 2.8-.3 4-.9"/><path d="M10.4 10.6a2.3 2.3 0 0 0 3.2 3.2"/>',
+        eyeOn: '<path d="M2.5 12C3.5 9.4 7 5 12 5s8.5 4.4 9.5 7c-1 2.6-4.5 7-9.5 7'
+            + 's-8.5-4.4-9.5-7Z"/><circle cx="12" cy="12" r="2.6"/>',
         zin: '<circle cx="10.6" cy="10.6" r="6.4"/><path d="M10.6 7.8v5.6M7.8 10.6h5.6M20 20l-4.5-4.5"/>',
         zout: '<circle cx="10.6" cy="10.6" r="6.4"/><path d="M7.8 10.6h5.6M20 20l-4.5-4.5"/>',
         fitw: '<path d="M3.5 7.5V4.5h17v3M3.5 16.5v3h17v-3M7 12h10M7 12l2.4-2.4M7 12l2.4 2.4M17 12l-2.4-2.4M17 12l-2.4 2.4"/>',
@@ -422,6 +429,24 @@
         autohide: 'always',
         autohideDelay: 2600,
 
+        /* Chrome (the title bar and the dock) floats over the document
+           rather than boxing it in, so it is kept translucent and can be
+           dismissed outright.
+           barOpacity  0 = invisible, 1 = solid. The blur behind it stays
+                       either way, so text under it remains readable.
+           chrome      'visible' | 'hidden' — what to start with. Hidden
+                       leaves only a faint peek button; H, that button, or
+                       a tap on the document brings the bars back.
+           tapToToggle a tap on the document hides or shows the bars. */
+        barOpacity: null,
+        chrome: 'visible',
+        tapToToggle: true,
+
+        /* Copy the text that is on screen — not the whole document.
+           Works even with protect on, since it is a deliberate action
+           rather than a drag-select of everything. */
+        allowCopy: true,
+
         thumbnails: true,
         search: true,
         rotate: true,
@@ -452,10 +477,16 @@
               '<div class="pdfre-subtitle"></div>' +
             '</div>' +
             '<div class="pdfre-topbar-actions">' +
+              iconBtn('pdfre-b-copy', 'copy', 'Copy visible text', 'Copy the text on screen') +
               iconBtn('pdfre-b-search', 'search', 'Search', 'Search in document') +
+              iconBtn('pdfre-b-chrome', 'eyeOff', 'Hide controls', 'Hide the bars (H)') +
               iconBtn('pdfre-b-fs', 'fsIn', 'Fullscreen', 'Enter fullscreen') +
             '</div>' +
           '</div>' +
+
+          '<button class="pdfre-peek pdfre-ico" type="button" ' +
+            'aria-label="Show controls" data-tip="Show controls (H)">' +
+            svg('eyeOn') + '</button>' +
 
           '<div class="pdfre-body">' +
             '<aside class="pdfre-sidebar"><div class="pdfre-thumbs"></div></aside>' +
@@ -583,6 +614,10 @@
         if (!o.thumbnails) q('.pdfre-b-thumbs').style.display = 'none';
         if (!o.search) q('.pdfre-b-search').style.display = 'none';
         if (!o.rotate) q('.pdfre-b-rot').style.display = 'none';
+        if (!o.allowCopy) q('.pdfre-b-copy').style.display = 'none';
+
+        this.setBarOpacity(o.barOpacity);
+        if (o.chrome === 'hidden') this.toggleChrome(false);
 
         /* ---- controls ---- */
         var on = function (sel, ev, fn) {
@@ -604,6 +639,15 @@
         on('.pdfre-b-sclose', 'click', function () { self.toggleSearch(false); });
         on('.pdfre-b-snext', 'click', function () { self.stepMatch(1); });
         on('.pdfre-b-sprev', 'click', function () { self.stepMatch(-1); });
+        on('.pdfre-b-copy', 'click', function () { self.copyVisible(); });
+        this.scrollEl.addEventListener('click', function (e) {
+            if (!self.opts.tapToToggle) return;
+            if (e.target && e.target.closest && e.target.closest('.pdfre-page, canvas')) {
+                self.toggleChrome();
+            }
+        });
+        on('.pdfre-b-chrome', 'click', function () { self.toggleChrome(false); });
+        on('.pdfre-peek', 'click', function (e) { e.stopPropagation(); self.toggleChrome(true); });
         on('.pdfre-error .pdfre-btn', 'click', function () { self.load(); });
 
         this.pageInput.addEventListener('change', function () {
@@ -956,7 +1000,11 @@
         this.updateVisible();
     };
 
-    Reader.prototype.zoomBy = function (f) {
+    Reader.prototype.zoomBy = function (f, ax, ay) {
+        if (this.mode === 'html') {
+            this.smoothZoomTo(this.scale * f, ax, ay);
+            return;
+        }
         this.fitMode = null;
         this.scale = clamp(this.scale * f, this.opts.minZoom, this.opts.maxZoom);
         this.relayout(true);
@@ -1201,6 +1249,11 @@
             case '-': case '_': this.zoomBy(1 / 1.25); break;
             case '0': this.setZoom('fit-width'); break;
             case 'f': case 'F': this.toggleFullscreen(); break;
+            case 'h': case 'H': this.toggleChrome(); break;
+            case 'c': case 'C':
+                if (e.ctrlKey || e.metaKey) return;   // leave the native copy alone
+                this.copyVisible();
+                break;
             case 'r': case 'R': if (this.opts.rotate) this.rotate(90); break;
             case 'Escape':
                 if (this.shell.classList.contains('is-search')) this.toggleSearch(false);
@@ -1291,6 +1344,215 @@
         if (!this.idoc) return;
         try { this.idoc.documentElement.classList.toggle('pdfre-idle', !!on); } catch (e) { }
     };
+
+    /* ---------- chrome (title bar + dock) ---------- */
+
+    /* Dismiss the bars entirely, or bring them back. Unlike the idle fade
+       this is a decision, so it sticks until it is reversed. */
+    Reader.prototype.toggleChrome = function (force) {
+        var show = (typeof force === 'boolean')
+            ? force
+            : this.shell.classList.contains('is-chrome-off');
+
+        this.shell.classList.toggle('is-chrome-off', !show);
+
+        var btn = this.root.querySelector('.pdfre-b-chrome');
+        if (btn) {
+            btn.setAttribute('data-tip', show ? 'Hide the bars (H)' : 'Show the bars (H)');
+            btn.setAttribute('aria-label', show ? 'Hide controls' : 'Show controls');
+        }
+        if (show) this.poke();
+        return show;
+    };
+
+    Reader.prototype.setBarOpacity = function (a) {
+        if (a === null || a === undefined || a === '') return;
+        this.root.style.setProperty('--pr-chrome-a', clamp(parseFloat(a) || 0, 0, 1));
+    };
+
+    /* ---------- copy what is on screen ---------- */
+
+    /* Deliberately not the whole document. In notes mode the visible slice
+       is taken with caret positions at the top-left and bottom-right of the
+       frame, which is exactly what the reader can see; in PDF mode it is
+       the text items of the visible pages, filtered to the visible band. */
+    Reader.prototype.copyVisible = function () {
+        if (!this.opts.allowCopy) return;
+        var self = this;
+
+        this.collectVisibleText().then(function (text) {
+            text = (text || '').replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+            if (!text) { self.toast('Nothing to copy on screen'); return; }
+
+            self.writeClipboard(text).then(function (ok) {
+                if (!ok) { self.toast('Copy blocked by the browser'); return; }
+                var words = text.split(/\s+/).length;
+                self.toast('Copied ' + words + (words === 1 ? ' word' : ' words') + ' from this screen');
+            });
+        }).catch(function () { self.toast('Could not read the visible text'); });
+    };
+
+    Reader.prototype.collectVisibleText = function () {
+        if (this.mode === 'html') return Promise.resolve(this.visibleHtmlText());
+        return this.visiblePdfText();
+    };
+
+    Reader.prototype.visibleHtmlText = function () {
+        var doc = this.idoc, win = this.iwin;
+        if (!doc || !win) return '';
+
+        /* Top bar and dock float over the page, so the genuinely readable
+           band is inset by their heights rather than the full viewport. */
+        var top = 6, bottom = win.innerHeight - 6;
+        if (!this.shell.classList.contains('is-chrome-off')) {
+            top = 58; bottom = win.innerHeight - 74;
+        }
+        if (bottom <= top) { top = 2; bottom = win.innerHeight - 2; }
+
+        var a = caretAt(doc, 4, top);
+        var b = caretAt(doc, win.innerWidth - 4, bottom);
+
+        if (a && b) {
+            try {
+                var range = doc.createRange();
+                range.setStart(a.node, a.offset);
+                range.setEnd(b.node, b.offset);
+                if (!range.collapsed) return range.toString();
+            } catch (e) { /* nodes out of order — fall through to the walk */ }
+        }
+        return this.visibleHtmlTextByWalk(top, bottom);
+    };
+
+    /* Fallback for browsers without a caret-from-point API, and for the
+       case where the two carets do not form a valid range (an image or a
+       gap under one of the sample points). Whole text nodes this time —
+       slightly more generous at the edges, but never the whole document. */
+    Reader.prototype.visibleHtmlTextByWalk = function (top, bottom) {
+        var doc = this.idoc, out = [], seen = '';
+        var walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT, {
+            acceptNode: function (n) {
+                if (!n.nodeValue || !n.nodeValue.trim()) return NodeFilter.FILTER_REJECT;
+                var p = n.parentNode;
+                if (!p || p.closest('.pdfre-wm, script, style')) return NodeFilter.FILTER_REJECT;
+                return NodeFilter.FILTER_ACCEPT;
+            }
+        });
+
+        var n;
+        while ((n = walker.nextNode())) {
+            var r;
+            try {
+                var rg = doc.createRange();
+                rg.selectNodeContents(n);
+                r = rg.getBoundingClientRect();
+            } catch (e) { continue; }
+            if (!r || (!r.height && !r.width)) continue;
+            if (r.bottom < top || r.top > bottom) continue;
+
+            var t = n.nodeValue.replace(/\s+/g, ' ').trim();
+            if (!t || t === seen) continue;
+            seen = t;
+
+            var block = n.parentNode && isBlockish(n.parentNode);
+            out.push(block ? '\n' + t : t + ' ');
+        }
+        return out.join('').replace(/[ ]{2,}/g, ' ');
+    };
+
+    Reader.prototype.visiblePdfText = function () {
+        var self = this;
+        if (!this.pdf) return Promise.resolve('');
+
+        var pr = this.scrollEl.getBoundingClientRect();
+        var top = pr.top + (this.shell.classList.contains('is-chrome-off') ? 4 : 56);
+        var bottom = pr.bottom - (this.shell.classList.contains('is-chrome-off') ? 4 : 72);
+
+        /* Which pages are on screen, and what band of each one */
+        var wanted = [];
+        for (var i = 1; i <= this.numPages; i++) {
+            var pe = this.pageEls[i];
+            if (!pe) continue;
+            var r = pe.getBoundingClientRect();
+            if (r.bottom < top || r.top > bottom) continue;
+            wanted.push({
+                page: i,
+                /* fractions of the page height that are visible */
+                from: clamp((top - r.top) / (r.height || 1), 0, 1),
+                to: clamp((bottom - r.top) / (r.height || 1), 0, 1)
+            });
+        }
+        if (!wanted.length) return Promise.resolve('');
+
+        return Promise.all(wanted.map(function (w) {
+            return self.pdf.getPage(w.page).then(function (page) {
+                return page.getTextContent().then(function (tc) {
+                    var vp = page.getViewport({ scale: 1, rotation: self.rotation });
+                    var h = vp.height || 1, lines = [], lastY = null, buf = [];
+
+                    tc.items.forEach(function (it) {
+                        if (!it.str) return;
+                        var pt = vp.convertToViewportPoint(it.transform[4], it.transform[5]);
+                        var f = pt[1] / h;                       // 0 at page top
+                        if (f < w.from || f > w.to) return;
+
+                        if (lastY === null || Math.abs(pt[1] - lastY) < 3) buf.push(it.str);
+                        else { lines.push(buf.join('')); buf = [it.str]; }
+                        lastY = pt[1];
+                    });
+                    if (buf.length) lines.push(buf.join(''));
+                    return lines.join('\n');
+                });
+            }).catch(function () { return ''; });
+        })).then(function (parts) { return parts.join('\n\n'); });
+    };
+
+    Reader.prototype.writeClipboard = function (text) {
+        /* navigator.clipboard does not raise a copy event, so the protect
+           guards do not need an exception carved out for it. */
+        if (global.navigator && navigator.clipboard && navigator.clipboard.writeText) {
+            return navigator.clipboard.writeText(text)
+                .then(function () { return true; })
+                .catch(function () { return legacyCopy(text); });
+        }
+        return Promise.resolve(legacyCopy(text));
+    };
+
+    function legacyCopy(text) {
+        try {
+            /* Outside the reader element, so the guards on root do not
+               swallow the copy event this fires. */
+            var ta = document.createElement('textarea');
+            ta.value = text;
+            ta.setAttribute('readonly', '');
+            ta.style.cssText = 'position:fixed;top:-1000px;left:-1000px;opacity:0';
+            document.body.appendChild(ta);
+            ta.select();
+            var ok = document.execCommand('copy');
+            document.body.removeChild(ta);
+            return ok;
+        } catch (e) { return false; }
+    }
+
+    function caretAt(doc, x, y) {
+        try {
+            if (doc.caretRangeFromPoint) {              // Chrome, Safari
+                var r = doc.caretRangeFromPoint(x, y);
+                return r ? { node: r.startContainer, offset: r.startOffset } : null;
+            }
+            if (doc.caretPositionFromPoint) {           // Firefox
+                var p = doc.caretPositionFromPoint(x, y);
+                return p ? { node: p.offsetNode, offset: p.offset } : null;
+            }
+        } catch (e) { /* cross-document or unsupported */ }
+        return null;
+    }
+
+    function isBlockish(el) {
+        try {
+            var d = (el.ownerDocument.defaultView.getComputedStyle(el).display || '');
+            return d.indexOf('inline') !== 0;
+        } catch (e) { return true; }
+    }
 
     /* ---------- sidebar / thumbnails ---------- */
     Reader.prototype.toggleSidebar = function (force) {
@@ -2261,6 +2523,96 @@
         });
     };
 
+    /* ---------- smooth zoom (HTML notes) ----------
+       Changing CSS zoom relayouts the whole document, which is why
+       stepping the zoom used to stutter. So the gesture is previewed with
+       a transform on the wrapper — compositor work, no reflow — and the
+       real zoom is applied once, when the gesture finishes. */
+
+    Reader.prototype.beginZoomPreview = function () {
+        if (this._preview || !this.htmlDoc || !SUPPORTS_CSS_ZOOM) return false;
+        var rect = this.htmlDoc.getBoundingClientRect();
+        this._preview = {
+            base: this.scale,
+            z: this.scale,
+            left: rect.left + this.iwin.scrollX,
+            top: rect.top + this.iwin.scrollY
+        };
+        return true;
+    };
+
+    /* ax/ay are viewport coordinates inside the frame — the point that
+       should stay put while the scale changes. */
+    Reader.prototype.previewZoom = function (z, ax, ay) {
+        var p = this._preview;
+        if (!p) return;
+        var win = this.iwin, doc = this.htmlDoc;
+
+        z = clamp(z, Math.min(this.opts.minZoom, 0.1), this.opts.maxZoom);
+        p.z = z;
+        p.ax = ax; p.ay = ay;
+        p.X = win.scrollX + ax;
+        p.Y = win.scrollY + ay;
+
+        /* transform-origin is in the wrapper's own coordinate space, which
+           the ancestor zoom has already scaled — hence the divide. */
+        doc.style.transformOrigin =
+            ((p.X - p.left) / p.base) + 'px ' + ((p.Y - p.top) / p.base) + 'px';
+        doc.style.transform = 'scale(' + (z / p.base) + ')';
+        this.zoomVal.textContent = Math.round(z * 100) + '%';
+    };
+
+    Reader.prototype.commitZoomPreview = function () {
+        var p = this._preview;
+        if (!p) return;
+        this._preview = null;
+
+        var doc = this.htmlDoc, win = this.iwin, r = p.z / p.base;
+        doc.style.transform = '';
+        doc.style.transformOrigin = '';
+
+        this.fitMode = null;
+        this.scale = p.z;
+        this.applyHtmlZoom(p.z);
+
+        /* Under CSS zoom every document coordinate scales by the same
+           ratio, so the anchor lands back under the same pixel. */
+        if (p.X !== undefined) {
+            win.scrollTo(Math.max(0, p.X * r - p.ax), Math.max(0, p.Y * r - p.ay));
+        }
+        this.flagHtmlOverflow();
+        this.setFitIcon();
+        this.htmlUpdateVisible();
+    };
+
+    /* Button and keyboard zoom: run the preview over a short animation so
+       the step glides instead of jumping, then commit once at the end. */
+    Reader.prototype.smoothZoomTo = function (target, ax, ay) {
+        var self = this;
+        if (this.mode !== 'html' || !this.beginZoomPreview()) {
+            this.setZoom(target);
+            return;
+        }
+        if (this._zoomRaf) cancelAnimationFrame(this._zoomRaf);
+
+        var p = this._preview;
+        var from = p.base;
+        var to = clamp(target, Math.min(this.opts.minZoom, 0.1), this.opts.maxZoom);
+        if (ax === undefined) { ax = this.iwin.innerWidth / 2; ay = this.iwin.innerHeight / 2; }
+
+        var t0 = (global.performance ? performance.now() : Date.now()), dur = 170;
+
+        (function step(now) {
+            if (self.destroyed || !self._preview) return;
+            now = now || (global.performance ? performance.now() : Date.now());
+            var k = Math.min(1, (now - t0) / dur);
+            var eased = 1 - Math.pow(1 - k, 3);          // ease-out cubic
+            self.previewZoom(from + (to - from) * eased, ax, ay);
+            if (k < 1) self._zoomRaf = requestAnimationFrame(step);
+            else { self._zoomRaf = null; self.commitZoomPreview(); }
+        })();
+    };
+
     /* Marks the frame as pannable only while there is somewhere to pan. */
     Reader.prototype.flagHtmlOverflow = function () {
         if (!this.idoc || !this.iwin) return false;
@@ -2307,10 +2659,20 @@
         });
 
         /* ---- Ctrl+wheel zoom, Shift+wheel sideways ---- */
+        var wheelT = null;
         doc.addEventListener('wheel', function (e) {
             if (e.ctrlKey || e.metaKey) {
                 e.preventDefault();
-                self.zoomBy(e.deltaY < 0 ? 1.1 : 1 / 1.1);
+                /* Preview through the whole wheel burst and reflow once it
+                   stops, otherwise every notch relayouts the document. */
+                if (!self._preview) {
+                    if (self._zoomRaf) { cancelAnimationFrame(self._zoomRaf); self._zoomRaf = null; }
+                    if (!self.beginZoomPreview()) { self.zoomBy(e.deltaY < 0 ? 1.1 : 1 / 1.1); return; }
+                }
+                var step = Math.exp(-e.deltaY * 0.0022);      // smooth, sign-aware
+                self.previewZoom(self._preview.z * step, e.clientX, e.clientY);
+                clearTimeout(wheelT);
+                wheelT = setTimeout(function () { self.commitZoomPreview(); }, 180);
             } else if (e.shiftKey && !e.deltaX) {
                 e.preventDefault();
                 win.scrollBy(e.deltaY, 0);
@@ -2322,30 +2684,52 @@
         function dist(t) {
             return Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
         }
+        function mid(t) {
+            return {
+                x: (t[0].clientX + t[1].clientX) / 2,
+                y: (t[0].clientY + t[1].clientY) / 2
+            };
+        }
 
         doc.addEventListener('touchstart', function (e) {
             if (e.touches.length !== 2) return;
             pinching = true;
             startDist = dist(e.touches);
             startScale = self.scale;
+            if (self._zoomRaf) { cancelAnimationFrame(self._zoomRaf); self._zoomRaf = null; }
+            self.beginZoomPreview();
         }, { passive: true });
 
         doc.addEventListener('touchmove', function (e) {
             if (!pinching || e.touches.length !== 2) return;
             e.preventDefault();
-            self.fitMode = null;
-            self.scale = clamp(startScale * dist(e.touches) / (startDist || 1),
-                self.opts.minZoom, self.opts.maxZoom);
-            self.applyHtmlZoom(self.scale);
-            self.zoomVal.textContent = Math.round(self.scale * 100) + '%';
+            var m = mid(e.touches);
+            var z = startScale * dist(e.touches) / (startDist || 1);
+
+            if (self._preview) {
+                self.previewZoom(z, m.x, m.y);         // no reflow while moving
+            } else {
+                self.fitMode = null;
+                self.scale = clamp(z, self.opts.minZoom, self.opts.maxZoom);
+                self.applyHtmlZoom(self.scale);
+                self.zoomVal.textContent = Math.round(self.scale * 100) + '%';
+            }
         }, { passive: false });
 
         doc.addEventListener('touchend', function () {
             if (!pinching) return;
             pinching = false;
+            if (self._preview) { self.commitZoomPreview(); return; }
             self.flagHtmlOverflow();
             self.setFitIcon();
             self.htmlUpdateVisible();
+        });
+
+        /* ---- tap to show or hide the bars ---- */
+        doc.addEventListener('click', function (e) {
+            if (!self.opts.tapToToggle || moved) return;
+            if (e.target && e.target.closest && e.target.closest('a,button,input,select,textarea')) return;
+            self.toggleChrome();
         });
     };
 
@@ -2605,6 +2989,10 @@
                 page: parseInt(d.pdfrePage, 10) || 1,
                 zoom: d.pdfreZoom || 'fit-width',
                 autohide: d.pdfreAutohide || 'always',
+                barOpacity: d.pdfreBarOpacity !== undefined ? parseFloat(d.pdfreBarOpacity) : null,
+                chrome: d.pdfreChrome || 'visible',
+                tapToToggle: d.pdfreTapToggle !== 'false',
+                allowCopy: d.pdfreCopy !== 'false',
                 watermark: d.pdfreWatermark || '',
                 thumbnails: d.pdfreThumbnails !== 'false',
                 search: d.pdfreSearch !== 'false',
