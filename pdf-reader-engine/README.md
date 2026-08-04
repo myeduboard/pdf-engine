@@ -1,4 +1,4 @@
-# PDF Reader Engine v1.3.0
+# PDF Reader Engine v1.4.0
 
 A secure, embeddable document viewer for Blogger, WordPress and plain
 HTML. Host once on GitHub → serve anywhere via jsDelivr CDN.
@@ -54,8 +54,13 @@ pdf-reader-engine/
   of both, so nothing is hidden underneath. Press `H`, tap the page, or
   use the eye button to dismiss them entirely — a faint peek button
   brings them back.
-- **Copy what is on screen** — the copy button lifts the text currently
-  visible in the frame, not the whole document. Works with `protect` on.
+- **Select and copy, within what is on screen.** `S` (or the select
+  button) unlocks text selection in notes: drag to highlight a passage
+  and copy just that. Anything dragged past the edge of the frame is
+  trimmed back to the visible band when the drag ends, and `Ctrl`+`A`
+  means "all of what I can see", so a single sweep cannot lift the whole
+  document. With nothing highlighted, copy falls back to the whole
+  visible screen. Both work with `protect` on.
 - **Zoom glides.** Pinch, `Ctrl`+wheel and the zoom buttons preview the
   change with a transform and reflow once at the end, instead of
   relaying out the document on every step.
@@ -81,18 +86,18 @@ pdf-reader-engine/
 ```bash
 git init
 git add .
-git commit -m "v1.3.0 — PDF and HTML notes"
+git commit -m "v1.4.0 — PDF and HTML notes"
 git remote add origin https://github.com/YOUR-USER/pdf-reader-engine.git
 git push -u origin main
-git tag v1.3.0
-git push origin v1.3.0
+git tag v1.4.0
+git push origin v1.4.0
 ```
 
 **2. CDN URLs** (live about ten minutes after tagging)
 
 ```
-https://cdn.jsdelivr.net/gh/YOUR-USER/pdf-reader-engine@1.3.0/pdfre.css
-https://cdn.jsdelivr.net/gh/YOUR-USER/pdf-reader-engine@1.3.0/pdfre.js
+https://cdn.jsdelivr.net/gh/YOUR-USER/pdf-reader-engine@1.4.0/pdfre.css
+https://cdn.jsdelivr.net/gh/YOUR-USER/pdf-reader-engine@1.4.0/pdfre.js
 ```
 
 > Always pin a version tag. Never use `@latest` in production.
@@ -102,8 +107,8 @@ https://cdn.jsdelivr.net/gh/YOUR-USER/pdf-reader-engine@1.3.0/pdfre.js
 Blogger: Theme → Edit HTML, just before `</head>`.
 
 ```html
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/YOUR-USER/pdf-reader-engine@1.3.0/pdfre.css">
-<script defer src="https://cdn.jsdelivr.net/gh/YOUR-USER/pdf-reader-engine@1.3.0/pdfre.js"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/YOUR-USER/pdf-reader-engine@1.4.0/pdfre.css">
+<script defer src="https://cdn.jsdelivr.net/gh/YOUR-USER/pdf-reader-engine@1.4.0/pdfre.js"></script>
 ```
 
 **4. Reader block — once per post**
@@ -271,6 +276,7 @@ heuristic and can misfire on unusual window setups.
 | `chrome` | `'visible'` | `'hidden'` starts with the bars dismissed |
 | `tapToToggle` | `true` | A tap on the document hides or shows the bars |
 | `allowCopy` | `true` | Show the copy button (copies only what is on screen) |
+| `allowSelect` | `true` | Show the select-text toggle for HTML notes |
 | `srcEnc` | `''` | Obfuscated token from the link encoder |
 | `key` | `''` | Key the token was encoded with |
 | `proxyUrl` | `''` | Proxy endpoint; use alone for full privacy |
@@ -320,7 +326,7 @@ Globals: `PDFRE.encodeSrc`, `PDFRE.autoInit`, `PDFRE.instances`,
 ## Keyboard
 
 `↓ ↑ Space PgUp PgDn` scroll · `→ ←` page · `Shift`+`→ ←` pan sideways ·
-`H` hide/show bars · `C` copy visible text · `Home End` first/last ·
+`H` hide/show bars · `S` select text · `C` copy · `Home End` first/last ·
 `+ −` zoom · `0` fit width · `F` fullscreen · `R` rotate ·
 `Ctrl+F` search · `Esc` close search or exit fullscreen
 
@@ -376,6 +382,15 @@ means the fetch worked and it was treated as notes; `Failed to fetch`
 with nothing after it means the request never completed, which is almost
 always CORS.
 
+**Dragging pans instead of selecting** — panning and selecting both want
+the same gesture, so select mode takes it over. Turn select mode off (or
+press `S`) to go back to dragging, or scroll with the wheel and
+scrollbars while selecting.
+
+**Selection is not available on PDFs** — PDF pages render to canvas, so
+there is no text to select. The copy button still works there: it lifts
+the text of the visible pages out of the PDF itself.
+
 **The copy button copies less than I expected** — that is the point: it
 takes the text inside the visible band only, and the band excludes the
 strip under the title bar and dock. Dismiss the bars with `H` first to
@@ -398,7 +413,7 @@ in the notes file; self-contained files are what this mode expects.
 ## Updating the engine
 
 1. Edit `pdfre.css` / `pdfre.js`
-2. Commit and push a new tag (`v1.3.0`)
+2. Commit and push a new tag (`v1.4.0`)
 3. Update the version in your site's `<link>` and `<script>` URLs
 
 Old tags stay available on jsDelivr forever, so existing embeds never
