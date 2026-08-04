@@ -1,4 +1,4 @@
-# PDF Reader Engine v1.2.0
+# PDF Reader Engine v1.3.0
 
 A secure, embeddable document viewer for Blogger, WordPress and plain
 HTML. Host once on GitHub → serve anywhere via jsDelivr CDN.
@@ -49,6 +49,16 @@ pdf-reader-engine/
   into one continuous book.
 - **Page thumbnails**, jump-to-page, zoom, fit-to-width / fit-to-page,
   90° rotation, pinch zoom, Ctrl+wheel zoom, full keyboard control.
+- **The bars float, they do not crop.** Title bar and dock are
+  translucent with a blur behind them, and the document is padded clear
+  of both, so nothing is hidden underneath. Press `H`, tap the page, or
+  use the eye button to dismiss them entirely — a faint peek button
+  brings them back.
+- **Copy what is on screen** — the copy button lifts the text currently
+  visible in the frame, not the whole document. Works with `protect` on.
+- **Zoom glides.** Pinch, `Ctrl`+wheel and the zoom buttons preview the
+  change with a transform and reflow once at the end, instead of
+  relaying out the document on every step.
 - **Notes keep their authored layout** — a fixed page sheet is never
   reflowed to fit a phone. It is scaled down to fit the screen on load,
   and once you zoom in the frame scrolls sideways and can be dragged to
@@ -71,18 +81,18 @@ pdf-reader-engine/
 ```bash
 git init
 git add .
-git commit -m "v1.2.0 — PDF and HTML notes"
+git commit -m "v1.3.0 — PDF and HTML notes"
 git remote add origin https://github.com/YOUR-USER/pdf-reader-engine.git
 git push -u origin main
-git tag v1.2.0
-git push origin v1.2.0
+git tag v1.3.0
+git push origin v1.3.0
 ```
 
 **2. CDN URLs** (live about ten minutes after tagging)
 
 ```
-https://cdn.jsdelivr.net/gh/YOUR-USER/pdf-reader-engine@1.2.0/pdfre.css
-https://cdn.jsdelivr.net/gh/YOUR-USER/pdf-reader-engine@1.2.0/pdfre.js
+https://cdn.jsdelivr.net/gh/YOUR-USER/pdf-reader-engine@1.3.0/pdfre.css
+https://cdn.jsdelivr.net/gh/YOUR-USER/pdf-reader-engine@1.3.0/pdfre.js
 ```
 
 > Always pin a version tag. Never use `@latest` in production.
@@ -92,8 +102,8 @@ https://cdn.jsdelivr.net/gh/YOUR-USER/pdf-reader-engine@1.2.0/pdfre.js
 Blogger: Theme → Edit HTML, just before `</head>`.
 
 ```html
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/YOUR-USER/pdf-reader-engine@1.2.0/pdfre.css">
-<script defer src="https://cdn.jsdelivr.net/gh/YOUR-USER/pdf-reader-engine@1.2.0/pdfre.js"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/YOUR-USER/pdf-reader-engine@1.3.0/pdfre.css">
+<script defer src="https://cdn.jsdelivr.net/gh/YOUR-USER/pdf-reader-engine@1.3.0/pdfre.js"></script>
 ```
 
 **4. Reader block — once per post**
@@ -257,6 +267,10 @@ heuristic and can misfire on unusual window setups.
 | `sectionSelector` | `''` | What counts as a page in HTML notes |
 | `htmlReflow` | `false` | Let narrow screens reflow notes instead of scrolling sideways |
 | `htmlFitMinZoom` | `0` | Floor under fit-to-width for notes; `0` = shrink as far as needed |
+| `barOpacity` | theme default | Translucency of the title bar and dock, `0`–`1` |
+| `chrome` | `'visible'` | `'hidden'` starts with the bars dismissed |
+| `tapToToggle` | `true` | A tap on the document hides or shows the bars |
+| `allowCopy` | `true` | Show the copy button (copies only what is on screen) |
 | `srcEnc` | `''` | Obfuscated token from the link encoder |
 | `key` | `''` | Key the token was encoded with |
 | `proxyUrl` | `''` | Proxy endpoint; use alone for full privacy |
@@ -306,7 +320,7 @@ Globals: `PDFRE.encodeSrc`, `PDFRE.autoInit`, `PDFRE.instances`,
 ## Keyboard
 
 `↓ ↑ Space PgUp PgDn` scroll · `→ ←` page · `Shift`+`→ ←` pan sideways ·
-`Home End` first/last ·
+`H` hide/show bars · `C` copy visible text · `Home End` first/last ·
 `+ −` zoom · `0` fit width · `F` fullscreen · `R` rotate ·
 `Ctrl+F` search · `Esc` close search or exit fullscreen
 
@@ -362,6 +376,11 @@ means the fetch worked and it was treated as notes; `Failed to fetch`
 with nothing after it means the request never completed, which is almost
 always CORS.
 
+**The copy button copies less than I expected** — that is the point: it
+takes the text inside the visible band only, and the band excludes the
+strip under the title bar and dock. Dismiss the bars with `H` first to
+copy edge to edge.
+
 **HTML notes are cut off at the sides** — they are not; the frame
 scrolls horizontally. Drag to pan, or use `Shift`+wheel. If you would
 rather the text reflowed to the screen, set `htmlReflow: true`.
@@ -379,7 +398,7 @@ in the notes file; self-contained files are what this mode expects.
 ## Updating the engine
 
 1. Edit `pdfre.css` / `pdfre.js`
-2. Commit and push a new tag (`v1.2.0`)
+2. Commit and push a new tag (`v1.3.0`)
 3. Update the version in your site's `<link>` and `<script>` URLs
 
 Old tags stay available on jsDelivr forever, so existing embeds never
