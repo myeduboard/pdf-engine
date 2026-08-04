@@ -21,7 +21,7 @@
 (function (global) {
     'use strict';
 
-    var VERSION = '1.3.0';
+    var VERSION = '1.4.0';
     var CFG = global.PDFRE_CONFIG = global.PDFRE_CONFIG || {};
 
     /* ==========================================================
@@ -276,6 +276,8 @@
         close: '<path d="M6 6l12 12M18 6L6 18"/>',
         up: '<path d="M6 14.5l6-6 6 6"/>',
         down: '<path d="M6 9.5l6 6 6-6"/>',
+        select: '<path d="M9.5 4.5h5M9.5 19.5h5M12 4.5v15"/>'
+            + '<path d="M4.5 8.5v-4h15v4M4.5 15.5v4h15v-4"/>',
         copy: '<rect x="8.5" y="8.5" width="11" height="12" rx="2"/>'
             + '<path d="M15.5 5.5h-11a1 1 0 0 0-1 1v11"/>',
         eyeOff: '<path d="M4 4l16 16M9.9 5.2A8.6 8.6 0 0 1 12 5c5 0 8.5 4.4 9.5 7'
@@ -447,6 +449,11 @@
            rather than a drag-select of everything. */
         allowCopy: true,
 
+        /* Select mode: drag to highlight text, but only within the part of
+           the document that is on screen. Anything dragged past the edges
+           is trimmed back to the visible band before it can be copied. */
+        allowSelect: true,
+
         thumbnails: true,
         search: true,
         rotate: true,
@@ -477,6 +484,7 @@
               '<div class="pdfre-subtitle"></div>' +
             '</div>' +
             '<div class="pdfre-topbar-actions">' +
+              iconBtn('pdfre-b-select', 'select', 'Select text (S)', 'Select text on screen') +
               iconBtn('pdfre-b-copy', 'copy', 'Copy visible text', 'Copy the text on screen') +
               iconBtn('pdfre-b-search', 'search', 'Search', 'Search in document') +
               iconBtn('pdfre-b-chrome', 'eyeOff', 'Hide controls', 'Hide the bars (H)') +
@@ -615,6 +623,7 @@
         if (!o.search) q('.pdfre-b-search').style.display = 'none';
         if (!o.rotate) q('.pdfre-b-rot').style.display = 'none';
         if (!o.allowCopy) q('.pdfre-b-copy').style.display = 'none';
+        if (!o.allowSelect) q('.pdfre-b-select').style.display = 'none';
 
         this.setBarOpacity(o.barOpacity);
         if (o.chrome === 'hidden') this.toggleChrome(false);
@@ -640,6 +649,7 @@
         on('.pdfre-b-snext', 'click', function () { self.stepMatch(1); });
         on('.pdfre-b-sprev', 'click', function () { self.stepMatch(-1); });
         on('.pdfre-b-copy', 'click', function () { self.copyVisible(); });
+        on('.pdfre-b-select', 'click', function () { self.toggleSelect(); });
         this.scrollEl.addEventListener('click', function (e) {
             if (!self.opts.tapToToggle) return;
             if (e.target && e.target.closest && e.target.closest('.pdfre-page, canvas')) {
@@ -847,6 +857,12 @@
     Reader.prototype.openPdf = function (bytes) {
         var self = this;
         this.mode = 'pdf';
+        /* Pages are canvases here — there is nothing to select, so the
+           button goes and the copy button falls back to lifting the text
+           of the visible pages out of the PDF itself. */
+        var selBtn = this.root.querySelector('.pdfre-b-select');
+        if (selBtn) selBtn.style.display = 'none';
+        this.selectMode = false;
 
         return ensurePdfJs().then(function (lib) {
             if (self.destroyed) return null;
@@ -1250,6 +1266,7 @@
             case '0': this.setZoom('fit-width'); break;
             case 'f': case 'F': this.toggleFullscreen(); break;
             case 'h': case 'H': this.toggleChrome(); break;
+            case 's': case 'S': this.toggleSelect(); break;
             case 'c': case 'C':
                 if (e.ctrlKey || e.metaKey) return;   // leave the native copy alone
                 this.copyVisible();
@@ -1380,6 +1397,19 @@
         if (!this.opts.allowCopy) return;
         var self = this;
 
+        /* A highlight beats the whole screen: if the reader has picked out
+           a passage, that is what they meant to copy. Clamp it first. */
+        if (this.selectMode) {
+            this.clampSelection();
+            var picked = this.getSelectedText();
+            if (picked && picked.trim()) {
+                this.writeClipboard(picked.trim()).then(function (ok) {
+                    self.toast(ok ? 'Copied selection' : 'Copy blocked by the browser');
+                });
+                return;
+            }
+        }
+
         this.collectVisibleText().then(function (text) {
             text = (text || '').replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
             if (!text) { self.toast('Nothing to copy on screen'); return; }
@@ -1387,7 +1417,8 @@
             self.writeClipboard(text).then(function (ok) {
                 if (!ok) { self.toast('Copy blocked by the browser'); return; }
                 var words = text.split(/\s+/).length;
-                self.toast('Copied ' + words + (words === 1 ? ' word' : ' words') + ' from this screen');
+                self.toast('Copied ' + words + (words === 1 ? ' word' : ' words') +
+                    ' from this screen' + (self.selectMode ? ' (nothing selected)' : ''));
             });
         }).catch(function () { self.toast('Could not read the visible text'); });
     };
@@ -1397,31 +1428,133 @@
         return this.visiblePdfText();
     };
 
-    Reader.prototype.visibleHtmlText = function () {
-        var doc = this.idoc, win = this.iwin;
-        if (!doc || !win) return '';
-
-        /* Top bar and dock float over the page, so the genuinely readable
-           band is inset by their heights rather than the full viewport. */
+    /* The band of the frame the reader can actually see. The bars float
+       over the page, so what is under them does not count as visible. */
+    Reader.prototype.visibleBand = function () {
+        var win = this.iwin;
         var top = 6, bottom = win.innerHeight - 6;
         if (!this.shell.classList.contains('is-chrome-off')) {
             top = 58; bottom = win.innerHeight - 74;
         }
         if (bottom <= top) { top = 2; bottom = win.innerHeight - 2; }
-
-        var a = caretAt(doc, 4, top);
-        var b = caretAt(doc, win.innerWidth - 4, bottom);
-
-        if (a && b) {
-            try {
-                var range = doc.createRange();
-                range.setStart(a.node, a.offset);
-                range.setEnd(b.node, b.offset);
-                if (!range.collapsed) return range.toString();
-            } catch (e) { /* nodes out of order — fall through to the walk */ }
-        }
-        return this.visibleHtmlTextByWalk(top, bottom);
+        return { top: top, bottom: bottom };
     };
+
+    /* A Range covering exactly that band, built from caret positions at its
+       corners. null when the browser has no caret-from-point API. */
+    Reader.prototype.visibleRange = function () {
+        var doc = this.idoc, win = this.iwin;
+        if (!doc || !win) return null;
+
+        var band = this.visibleBand();
+        var a = caretAt(doc, 4, band.top);
+        var b = caretAt(doc, win.innerWidth - 4, band.bottom);
+        if (!a || !b) return null;
+
+        try {
+            var r = doc.createRange();
+            r.setStart(a.node, a.offset);
+            r.setEnd(b.node, b.offset);
+            return r.collapsed ? null : r;
+        } catch (e) { return null; }    // corners out of order
+    };
+
+    Reader.prototype.visibleHtmlText = function () {
+        if (!this.idoc || !this.iwin) return '';
+        var r = this.visibleRange();
+        if (r) return r.toString();
+        var band = this.visibleBand();
+        return this.visibleHtmlTextByWalk(band.top, band.bottom);
+    };
+
+    /* ---------- select mode ---------- */
+
+    Reader.prototype.toggleSelect = function (force) {
+        if (this.mode !== 'html' || !this.opts.allowSelect) return false;
+
+        var on = (typeof force === 'boolean')
+            ? force
+            : !this.selectMode;
+
+        this.selectMode = on;
+        try { this.idoc.documentElement.classList.toggle('pdfre-select', on); } catch (e) { }
+
+        var btn = this.root.querySelector('.pdfre-b-select');
+        if (btn) {
+            btn.classList.toggle('is-on', on);
+            btn.setAttribute('data-tip', on ? 'Done selecting (S)' : 'Select text (S)');
+        }
+        if (!on) this.clearSelection();
+        this.toast(on
+            ? 'Select text on screen, then copy'
+            : 'Selection off');
+        return on;
+    };
+
+    Reader.prototype.clearSelection = function () {
+        try {
+            var sel = this.iwin.getSelection();
+            if (sel) sel.removeAllRanges();
+        } catch (e) { }
+    };
+
+    Reader.prototype.getSelectedText = function () {
+        if (!this.selectMode || !this.iwin) return '';
+        try {
+            var sel = this.iwin.getSelection();
+            if (!sel || !sel.rangeCount || sel.isCollapsed) return '';
+            return sel.toString();
+        } catch (e) { return ''; }
+    };
+
+    /* Trim whatever is highlighted back to the visible band. Dragging past
+       the edge of the frame auto-scrolls, which would otherwise let a
+       single drag sweep up the entire document. */
+    Reader.prototype.clampSelection = function () {
+        if (!this.selectMode || !this.iwin) return false;
+
+        var sel, r, vis;
+        try {
+            sel = this.iwin.getSelection();
+            if (!sel || !sel.rangeCount || sel.isCollapsed) return false;
+            vis = this.visibleRange();
+            if (!vis) return false;
+            r = sel.getRangeAt(0).cloneRange();
+        } catch (e) { return false; }
+
+        var R = this.iwin.Range || global.Range;
+        var trimmed = false;
+        try {
+            if (r.compareBoundaryPoints(R.START_TO_START, vis) < 0) {
+                r.setStart(vis.startContainer, vis.startOffset);
+                trimmed = true;
+            }
+            if (r.compareBoundaryPoints(R.END_TO_END, vis) > 0) {
+                r.setEnd(vis.endContainer, vis.endOffset);
+                trimmed = true;
+            }
+        } catch (e) { return false; }   // ranges in different trees
+
+        if (trimmed && !r.collapsed) {
+            sel.removeAllRanges();
+            sel.addRange(r);
+        }
+        return trimmed;
+    };
+
+    /* Ctrl+A inside the frame means "all of what I can see". */
+    Reader.prototype.selectVisible = function () {
+        if (!this.selectMode) return false;
+        var vis = this.visibleRange();
+        if (!vis) return false;
+        try {
+            var sel = this.iwin.getSelection();
+            sel.removeAllRanges();
+            sel.addRange(vis);
+            return true;
+        } catch (e) { return false; }
+    };
+
 
     /* Fallback for browsers without a caret-from-point API, and for the
        case where the two carets do not form a valid range (an image or a
@@ -2019,6 +2152,13 @@
         'margin:0 !important;padding:20px 15px !important;box-shadow:none !important}' +
         'html.pdfre-reflow #canvas{padding:0 !important;background:none !important}' +
         'html.pdfre-reflow body>*{max-width:100% !important}' +
+        /* select mode — text becomes selectable and the highlight visible */
+        'html.pdfre-select body{-webkit-user-select:text !important;' +
+        '-moz-user-select:text !important;user-select:text !important;' +
+        '-webkit-touch-callout:default}' +
+        'html.pdfre-select body,html.pdfre-select.pdfre-panx body{cursor:text}' +
+        'html.pdfre-select ::selection{background:rgba(66,133,244,.38);color:inherit}' +
+        'html.pdfre-select ::-moz-selection{background:rgba(66,133,244,.38);color:inherit}' +
         'mark.pdfre-mark{background:rgba(251,188,5,.55);color:inherit;padding:0;border-radius:2px}' +
         'mark.pdfre-mark.is-current{background:rgba(255,112,67,.7);box-shadow:0 0 0 2px rgba(255,112,67,.35)}' +
         '.pdfre-wm{position:fixed;inset:0;pointer-events:none;z-index:2147483000;' +
@@ -2331,10 +2471,34 @@
 
         if (o.protect) {
             this.idoc.addEventListener('contextmenu', prevent);
-            ['copy', 'cut', 'dragstart', 'selectstart'].forEach(function (ev) {
-                self.idoc.addEventListener(ev, prevent);
+            this.idoc.addEventListener('dragstart', prevent);
+
+            /* Selecting and copying are blocked by default, but select mode
+               is a deliberate, visible state — while it is on the reader is
+               allowed to take what it has highlighted. The selection is
+               clamped to the visible band first, so this never becomes a
+               way to lift the whole document. */
+            ['copy', 'cut', 'selectstart'].forEach(function (ev) {
+                self.idoc.addEventListener(ev, function (e) {
+                    if (self.selectMode) {
+                        if (ev === 'copy') self.clampSelection();
+                        return;
+                    }
+                    prevent(e);
+                });
             });
-            this.idoc.addEventListener('keydown', Guards.onKey, true);
+            this.idoc.addEventListener('keydown', function (e) {
+                var k = (e.key || '').toLowerCase();
+                if (self.selectMode && (e.ctrlKey || e.metaKey)) {
+                    if (k === 'c') { self.clampSelection(); return; }
+                    if (k === 'a') {            // select all *visible*, not all
+                        e.preventDefault();
+                        self.selectVisible();
+                        return;
+                    }
+                }
+                Guards.onKey(e);
+            }, true);
         }
 
         this.installFrameGestures();
@@ -2632,6 +2796,7 @@
         var down = false, moved = false, sx0 = 0, sy0 = 0, ox = 0, oy = 0;
 
         doc.addEventListener('mousedown', function (e) {
+            if (self.selectMode) return;          // dragging means select now
             if (e.button !== 0 || !self.flagHtmlOverflow()) return;
             if (e.target && e.target.closest && e.target.closest('a,button,input,select,textarea')) return;
             down = true; moved = false;
@@ -2655,6 +2820,16 @@
             doc.addEventListener(ev, function () {
                 down = false;
                 doc.documentElement.classList.remove('pdfre-panning');
+            });
+        });
+
+        /* Trim the highlight back to the visible band once the drag that
+           made it has finished. Doing this on selectionchange instead would
+           fight the browser mid-drag. */
+        ['mouseup', 'touchend'].forEach(function (ev) {
+            doc.addEventListener(ev, function () {
+                if (!self.selectMode) return;
+                setTimeout(function () { self.clampSelection(); }, 0);
             });
         });
 
@@ -2728,6 +2903,8 @@
         /* ---- tap to show or hide the bars ---- */
         doc.addEventListener('click', function (e) {
             if (!self.opts.tapToToggle || moved) return;
+            if (self.selectMode) return;          // taps are for selecting
+            if (self.getSelectedText()) return;
             if (e.target && e.target.closest && e.target.closest('a,button,input,select,textarea')) return;
             self.toggleChrome();
         });
@@ -2993,6 +3170,7 @@
                 chrome: d.pdfreChrome || 'visible',
                 tapToToggle: d.pdfreTapToggle !== 'false',
                 allowCopy: d.pdfreCopy !== 'false',
+                allowSelect: d.pdfreSelect !== 'false',
                 watermark: d.pdfreWatermark || '',
                 thumbnails: d.pdfreThumbnails !== 'false',
                 search: d.pdfreSearch !== 'false',
