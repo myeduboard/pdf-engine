@@ -112,6 +112,37 @@ function run() {
     rows.push(row('Frame marked pannable when overflowing', 'pdfre-panx',
       de.className || '(none)', /pdfre-panx/.test(de.className)));
 
+    // 11. the bars are translucent, so content shows through
+    var barBg = getComputedStyle(document.querySelector('.pdfre-topbar')).backgroundColor;
+    var alpha = (barBg.match(/rgba?\([^)]*?([\d.]+)\s*\)$/) || [])[1];
+    rows.push(row('Title bar is translucent', 'alpha < 1',
+      barBg, alpha !== undefined && parseFloat(alpha) < 1));
+
+    // 12. copy takes the visible slice, not the document
+    var whole = idoc.body.innerText.replace(/\s+/g, ' ').trim();
+    var slice = reader.visibleHtmlText().replace(/\s+/g, ' ').trim();
+    var scoped = slice.length > 0 && slice.length < whole.length * 0.9;
+    rows.push(row('Copy is scoped to the visible area', 'a strict subset',
+      slice.length + ' of ' + whole.length + ' chars', scoped));
+
+    // 13. the copied slice really is on screen
+    var firstWords = slice.split(' ').slice(0, 4).join(' ');
+    rows.push(row('Copied text starts at the visible top', 'not the doc start',
+      firstWords.slice(0, 40) || '(empty)',
+      slice.length > 0 && whole.indexOf(firstWords) !== 0));
+
+    // 14. zoom preview does not relayout
+    reader.setZoom(1);
+    reader.beginZoomPreview();
+    reader.previewZoom(1.8, 100, 100);
+    var previewing = /scale\(/.test(doc.style.transform) && idoc.body.style.zoom !== '1.8';
+    rows.push(row('Zoom preview uses a transform', 'transform, zoom untouched',
+      doc.style.transform || '(none)', previewing));
+    reader.commitZoomPreview();
+    rows.push(row('Commit swaps transform for real zoom', 'zoom 1.8, no transform',
+      'zoom=' + idoc.body.style.zoom + ' transform=' + (doc.style.transform || 'none'),
+      !doc.style.transform && Math.abs(parseFloat(idoc.body.style.zoom) - 1.8) < 0.01));
+
     reader.setZoom('fit-width');
     document.querySelector('#out tbody').innerHTML = rows.join('');
   }, 200);
