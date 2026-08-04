@@ -143,6 +143,37 @@ function run() {
       'zoom=' + idoc.body.style.zoom + ' transform=' + (doc.style.transform || 'none'),
       !doc.style.transform && Math.abs(parseFloat(idoc.body.style.zoom) - 1.8) < 0.01));
 
+    // 15. select mode makes text selectable again
+    reader.toggleSelect(true);
+    var us = getComputedStyle(idoc.body).webkitUserSelect ||
+             getComputedStyle(idoc.body).userSelect;
+    rows.push(row('Select mode unlocks text selection', 'text',
+      us || '(unset)', /text|auto/.test(us || '')));
+
+    // 16. a selection dragged past the band is trimmed back to it
+    var vis = reader.visibleRange();
+    if (vis) {
+      var all = idoc.createRange();
+      all.selectNodeContents(idoc.body);
+      var sel = win.getSelection();
+      sel.removeAllRanges(); sel.addRange(all);
+      var wide = sel.toString().length;
+      reader.clampSelection();
+      var kept = sel.toString().length;
+      rows.push(row('Whole-document selection is trimmed', 'shrinks to the band',
+        wide + ' → ' + kept + ' chars', kept > 0 && kept < wide * 0.9));
+
+      // 17. and copying takes only that
+      rows.push(row('Trimmed selection matches visible band', 'equal',
+        kept + ' vs ' + vis.toString().length,
+        Math.abs(kept - vis.toString().length) < 5));
+      sel.removeAllRanges();
+    } else {
+      rows.push(row('Whole-document selection is trimmed', 'shrinks to the band',
+        'no caret API — walk fallback in use', false));
+    }
+    reader.toggleSelect(false);
+
     reader.setZoom('fit-width');
     document.querySelector('#out tbody').innerHTML = rows.join('');
   }, 200);
