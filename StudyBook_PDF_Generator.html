@@ -1,0 +1,1978 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Study Book — PDF Book Generator</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,600;0,700;1,400;1,600&family=Oswald:wght@600;700&family=Fira+Code:wght@400;600&display=swap" rel="stylesheet">
+<style>
+/* ============================================================
+   1. BOOK DESIGN TOKENS  — recovered from the source PDF
+   ============================================================ */
+:root{
+  --ink:#1a1206;          /* headings, dark blocks, hairlines */
+  --ink-muted:#7a6440;    /* folios, captions */
+  --body:#3d2e10;         /* body copy */
+  --paper:#ffffff;
+
+  --gold:#5c3d05;         --gold-mid:#d4aa60;   --gold-pale:#fde9a2;  --cream:#fffbe8;
+  --teal:#0f4a4c;         --teal-deep:#0a3335;  --teal-pale:#eaf6f5;  --teal-lite:#a8dede;
+  --sage:#2a4d2e;         --sage-deep:#1c3520;  --sage-pale:#eaf4eb;
+  --ruby:#7a0f1e;         --ruby-deep:#5c0a16;  --ruby-pale:#fff0f2;
+  --indigo:#1c2a6b;       --indigo-deep:#131e50;--indigo-pale:#eef0fb;
+
+  --line:rgba(26,18,6,.14);
+  --line-soft:rgba(26,18,6,.10);
+  --shadow:0 2px 14px rgba(26,18,6,.055);
+
+  --serif:'EB Garamond',Georgia,'Times New Roman',serif;
+  --sans:'Oswald','Arial Narrow',Arial,sans-serif;
+  --mono:'Fira Code','SFMono-Regular',Consolas,monospace;
+
+  /* base reading size for the book body — everything inside #book scales from this */
+  --fs:15px;
+
+  /* page box, in the units the source PDF was printed with */
+  --pg-top:15.05mm; --pg-side:22.26mm; --pg-bottom:19.4mm;
+}
+
+/* ============================================================
+   2. APP SHELL  (screen only)
+   ============================================================ */
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:#efece4;font-family:var(--sans);color:var(--ink);
+     font-weight:400;-webkit-font-smoothing:antialiased}
+
+#app{display:grid;grid-template-columns:330px 1fr;height:100vh}
+
+/* ---- control rail ---- */
+#rail{background:var(--ink);color:#fff;display:flex;flex-direction:column;overflow:hidden}
+#rail header{padding:26px 24px 18px;border-bottom:1px solid rgba(253,233,162,.14)}
+.brand{display:flex;align-items:center;gap:10px}
+.brand i{width:9px;height:9px;background:var(--gold-pale);transform:rotate(45deg);flex:none}
+.brand h1{margin:0;font:600 14px/1 var(--sans);letter-spacing:.19em;text-transform:uppercase;color:var(--gold-pale)}
+.brand p{margin:7px 0 0 19px;font:300 11px/1.5 var(--mono);color:rgba(255,255,255,.5)}
+
+#rail .scroll{flex:1;overflow-y:auto;padding:20px 24px 24px}
+.grp{margin-bottom:26px}
+.grp>h2{margin:0 0 11px;font:600 10px/1 var(--sans);letter-spacing:.2em;text-transform:uppercase;color:rgba(253,233,162,.62)}
+
+#drop{border:1px dashed rgba(253,233,162,.34);border-radius:8px;padding:22px 16px;text-align:center;
+      cursor:pointer;transition:background .15s,border-color .15s;background:rgba(255,255,255,.02)}
+#drop:hover,#drop.hot{background:rgba(253,233,162,.09);border-color:var(--gold-pale)}
+#drop b{display:block;font:600 12px/1.4 var(--sans);letter-spacing:.1em;text-transform:uppercase;color:#fff}
+#drop span{display:block;margin-top:6px;font:300 10.5px/1.6 var(--mono);color:rgba(255,255,255,.5)}
+#file{display:none}
+
+.part{display:flex;align-items:center;gap:10px;padding:9px 11px;border-radius:6px;
+      background:rgba(255,255,255,.05);margin-bottom:7px}
+.part .n{font:600 10px/1 var(--mono);color:var(--gold-pale);letter-spacing:.06em;flex:none}
+.part .t{flex:1;min-width:0;font:400 12px/1.35 var(--serif);color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.part .c{font:300 9.5px/1 var(--mono);color:rgba(255,255,255,.42);flex:none}
+.part button{background:none;border:0;color:rgba(255,255,255,.4);cursor:pointer;font-size:14px;line-height:1;padding:2px}
+.part button:hover{color:var(--ruby-pale)}
+.empty{font:300 11px/1.6 var(--mono);color:rgba(255,255,255,.35)}
+
+label.f{display:block;margin-bottom:12px}
+label.f span{display:block;font:300 10px/1 var(--mono);letter-spacing:.05em;color:rgba(255,255,255,.5);margin-bottom:6px}
+label.f input,label.f select{width:100%;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);
+  border-radius:5px;color:#fff;font:400 12.5px/1.3 var(--serif);padding:8px 10px}
+label.f select{font-family:var(--mono);font-size:11px}
+label.f input:focus,label.f select:focus{outline:2px solid var(--gold-pale);outline-offset:1px}
+label.f option{color:#111}
+
+.chk{display:flex;align-items:center;gap:9px;margin-bottom:9px;font:300 11px/1.4 var(--mono);color:rgba(255,255,255,.72);cursor:pointer}
+.chk input{accent-color:var(--gold-pale);width:14px;height:14px}
+
+#rail footer{padding:16px 24px 22px;border-top:1px solid rgba(253,233,162,.14);display:grid;gap:9px}
+.btn{display:block;width:100%;border:0;border-radius:6px;padding:13px 14px;cursor:pointer;
+     font:600 11.5px/1 var(--sans);letter-spacing:.17em;text-transform:uppercase;transition:filter .15s}
+.btn:disabled{opacity:.35;cursor:not-allowed}
+.btn:not(:disabled):hover{filter:brightness(1.12)}
+.btn-p{background:var(--gold-pale);color:var(--ink)}
+.btn-s{background:transparent;color:rgba(255,255,255,.75);border:1px solid rgba(255,255,255,.2)}
+.hint{font:300 10px/1.55 var(--mono);color:rgba(255,255,255,.38);margin:2px 0 0}
+
+/* ---- preview canvas ---- */
+#canvas{overflow:auto;padding:34px 0 60px;background:
+  repeating-linear-gradient(45deg,#efece4 0 12px,#eceae1 12px 24px)}
+#status{max-width:210mm;margin:0 auto 18px;padding:0 4px;display:flex;justify-content:space-between;
+        align-items:baseline;font:300 10.5px/1 var(--mono);color:#8a8272}
+#status b{font-weight:600;letter-spacing:.14em;text-transform:uppercase;font-family:var(--sans);
+          font-size:10px;color:var(--gold)}
+.sheet{width:210mm;margin:0 auto;background:var(--paper);box-shadow:0 8px 34px rgba(26,18,6,.13);
+       padding:var(--pg-top) var(--pg-side) var(--pg-bottom)}
+#blank{padding:120px 40px;text-align:center;color:#9c9384}
+#blank .mk{font:600 italic 46px/1 var(--serif);color:#cfc7b6}
+#blank p{margin:16px auto 0;max-width:330px;font:400 14px/1.7 var(--serif);color:#8a8272}
+
+/* ---- authoring prompt modal ---- */
+.grp .btn{margin-top:10px}
+#modal{position:fixed;inset:0;z-index:60;display:none;padding:30px;background:rgba(26,18,6,.62)}
+#modal.on{display:flex;align-items:center;justify-content:center}
+#modal .win{display:flex;flex-direction:column;width:min(940px,100%);
+  height:min(100%,860px);max-height:100%;
+  background:var(--paper);border-radius:10px;overflow:hidden;box-shadow:0 26px 64px rgba(26,18,6,.42)}
+#modal .win>header{display:flex;align-items:center;gap:16px;padding:15px 22px;background:var(--ink)}
+#modal .win>header h2{margin:0;font:600 12px/1 var(--sans);letter-spacing:.19em;
+  text-transform:uppercase;color:var(--gold-pale)}
+#modal .win>header p{margin:6px 0 0;font:300 11px/1 var(--mono);color:rgba(255,255,255,.5)}
+#modal .win>header button{margin-left:auto;background:none;border:0;cursor:pointer;
+  font-size:24px;line-height:1;color:rgba(255,255,255,.45);padding:0 2px}
+#modal .win>header button:hover{color:var(--gold-pale)}
+#prompt-text{flex:1 1 auto;min-height:220px;width:100%;padding:20px 22px;border:0;resize:none;
+  background:#fffdf6;color:var(--body);white-space:pre;overflow:auto;
+  font:400 12px/1.62 var(--mono)}
+#prompt-text:focus{outline:0}
+#modal .win>footer{display:flex;align-items:center;gap:10px;padding:13px 22px;
+  border-top:1px solid var(--line);background:var(--paper)}
+#modal .win>footer .btn{width:auto;margin:0;padding:11px 20px}
+#modal .win>footer .btn-s{background:transparent;color:var(--gold);
+  border:1px solid rgba(92,61,5,.38)}
+#modal .win>footer .btn-s:hover{background:var(--cream);border-color:var(--gold)}
+#modal .m-note{margin-left:auto;max-width:46%;text-align:right;
+  font:300 10.5px/1.5 var(--mono);color:var(--ink-muted)}
+
+/* ============================================================
+   3. THE BOOK
+   ============================================================ */
+#book{font-family:var(--serif);font-size:var(--fs);line-height:1.72;color:var(--body);
+      text-rendering:optimizeLegibility}
+#book em{font-style:italic}
+#book strong{font-weight:700}
+#book a{color:inherit}
+
+/* ---- 3.1 cover ---- */
+.cover{position:relative;background:var(--ink);color:#fff;overflow:hidden;
+       margin:0 -26px;padding:0 56px;height:990px;
+       display:flex;flex-direction:column;justify-content:center}
+.cover::before{content:"";position:absolute;inset:0;pointer-events:none;
+  background:
+    repeating-linear-gradient(90deg,transparent 0 71px,rgba(253,233,162,.045) 71px 72px),
+    repeating-linear-gradient(0deg,transparent 0 71px,rgba(253,233,162,.045) 71px 72px)}
+.cover>*{position:relative;z-index:1}
+.cv-eyebrow{display:flex;align-items:center;gap:14px;
+  font:300 11px/1 var(--mono);letter-spacing:.22em;text-transform:uppercase;color:var(--gold-pale)}
+.cv-eyebrow::before{content:"";width:52px;height:1px;background:var(--gold-mid);flex:none}
+.cv-title{margin:16px 0 0;font:600 italic 40.8px/1.12 var(--serif);color:var(--gold-pale);letter-spacing:-.005em}
+.cv-sub{margin:14px 0 0;max-width:568px;font:italic 400 18.9px/1.71 var(--serif);color:rgba(255,255,255,.88)}
+.cv-rule{margin:44px 0 0;height:1px;background:rgba(253,233,162,.24)}
+.cv-stats{display:flex;gap:44px;margin-top:17px}
+.cv-stats dt{font:600 12px/1.4 var(--mono);color:#fff;letter-spacing:.02em}
+.cv-stats dd{margin:2px 0 0;font:300 12px/1.4 var(--mono);color:rgba(255,255,255,.58)}
+.cv-num{position:absolute;right:65px;bottom:40px;z-index:0;
+        font:700 180px/1 var(--serif);color:rgba(255,255,255,.045);letter-spacing:.02em}
+
+/* ---- 3.2 contents ---- */
+.toc{break-before:page}
+.toc-card{background:var(--paper);border:1px solid var(--line-soft);border-top:3px solid #7a5208;
+          border-radius:7px;box-shadow:var(--shadow);margin-bottom:22px;break-inside:auto}
+.toc-head{display:flex;align-items:center;gap:14px;height:48.9px;padding:0 24px;
+          border-bottom:1px solid var(--line);flex-wrap:wrap}
+.toc-head .pill{font:600 9.5px/1 var(--mono);letter-spacing:.18em;text-transform:uppercase;color:#ababab;flex:none}
+.toc-head h2{margin:0;font:600 13px/1.2 var(--sans);letter-spacing:.045em;text-transform:uppercase;color:var(--gold)}
+.toc-head .cnt{margin-left:auto;font:300 10px/1 var(--mono);color:var(--ink-muted);flex:none}
+.toc-grid{padding:16px 24px 8px;display:grid;grid-template-columns:1fr 1fr;column-gap:32px}
+.toc-item{display:flex;align-items:baseline;column-gap:12px;text-decoration:none;color:inherit;
+          padding:8px 0;border-bottom:1px dashed rgba(26,18,6,.26);break-inside:avoid}
+.toc-item .num{flex:none;min-width:20px;font:600 10px/1 var(--mono);color:var(--gold);letter-spacing:.03em}
+.toc-item .ttl{flex:0 1 auto;font:400 15px/1.42 var(--serif);color:var(--teal)}
+.toc-item .lead{flex:1 1 auto;min-width:12px;align-self:flex-end;height:0;margin-bottom:4px;
+                border-bottom:1px dotted rgba(26,18,6,.30)}
+.toc-item .pg{flex:none;min-width:16px;text-align:right;
+              font:600 10.5px/1 var(--mono);color:var(--gold);letter-spacing:.02em}
+.toc-item .pg:empty{display:none}
+a.toc-item:hover .ttl{color:var(--gold)}
+
+/* ---- 3.3 part divider ---- */
+.divider{break-before:page;min-height:262mm;display:flex;flex-direction:column;
+         align-items:center;justify-content:center;text-align:center}
+.dv-badge{display:inline-flex;align-items:center;gap:9px;height:36.9px;padding:0 20px;
+  border:1px solid var(--gold-mid);border-radius:6px;background:var(--paper);
+  font:600 14px/1 var(--mono);letter-spacing:.18em;text-transform:uppercase;color:var(--gold)}
+.dv-subject{margin:20px 0 0;font:600 11px/1 var(--sans);letter-spacing:.1em;text-transform:uppercase;color:#ababab}
+.dv-title{margin:11px 0 0;font:700 32px/1.2 var(--serif);color:var(--ink);max-width:560px}
+.dv-source{margin:12px 0 0;font:300 11px/1 var(--mono);color:var(--ink-muted)}
+
+/* ---- 3.4 chapter ---- */
+.chapter{break-before:page;padding-top:56px}
+.ch-head{display:flex;align-items:center;gap:16px}
+.ch-kicker{display:inline-flex;align-items:center;height:24px;padding:0 11px;flex:none;
+  border:1px solid var(--gold-mid);border-radius:5px;background:var(--cream);
+  font:600 10px/1 var(--mono);letter-spacing:.16em;text-transform:uppercase;color:var(--gold)}
+.ch-head .rule{flex:1;height:1px;background:var(--paper)}
+.chapter.no-kicker .ch-title{margin-top:0}
+.ch-title{margin:18px 0 0;font:700 30px/1.15 var(--serif);color:var(--ink);break-after:avoid}
+.ch-rule{margin:13px 0 0;height:2px;background:var(--gold-pale)}
+.ch-body{margin-top:19px}
+.ch-body>*:first-child{margin-top:0}
+
+/* ---- 3.4b two-column body ---- */
+#book.two-col .ch-body{columns:2;column-gap:9mm;orphans:2;widows:2}
+#book.two-col .ch-body>p{margin:0 0 12px;text-align:justify}
+#book.two-col .ch-body>h3{margin-top:20px}
+#book.two-col .ch-body>h3:first-child{margin-top:0}
+/* full-measure elements break out of the columns and span the whole page */
+#book.two-col .ch-body>.tbl,
+#book.two-col .ch-body>.memory,
+#book.two-col .ch-body>.g2,
+#book.two-col .ch-body>.flow,
+#book.two-col .ch-body>.stats,
+#book.two-col .ch-body>.cmp,
+#book.two-col .ch-body>.latest,
+#book.two-col .ch-body>.formula,
+#book.two-col .ch-body>hr{column-span:all}
+#book.two-col .ch-body>.tbl{margin:18px 0}
+#book.two-col .ch-body>.g2{margin:18px 0}
+/* a spanning element resets the flow, so give what follows a clean start */
+#book.two-col .ch-body>.tbl+*,
+#book.two-col .ch-body>.memory+*,
+#book.two-col .ch-body>.g2+*{margin-top:0}
+
+/* ---- 3.5 flowing content ---- */
+#book p{margin:16px 0}
+#book h3{margin:28px 0 11px;padding:3.5px 0 3.5px 12px;border-left:3px solid var(--teal);
+  font:600 1.2em/1.25 var(--sans);letter-spacing:.055em;text-transform:uppercase;color:var(--teal);
+  break-after:avoid}
+#book h4{margin:20px 0 8px;font:600 1em/1.3 var(--sans);letter-spacing:.1em;
+  text-transform:uppercase;color:var(--gold);break-after:avoid}
+#book hr{border:0;border-top:1px dashed var(--line);margin:22px 0}
+#book ul:not(.facts),#book ol:not(.qr-list){margin:14px 0;padding-left:22px}
+#book ul:not(.facts) li,#book ol:not(.qr-list) li{margin:5px 0}
+#book sup{font-size:.7em;vertical-align:super;line-height:0}
+#book small{font-size:.86em}
+
+/* keyword chips */
+/* inline (not inline-block) + cloned decoration, so a long phrase wraps
+   naturally at word boundaries and each fragment keeps its own pill */
+.kw{display:inline;font-family:var(--mono);font-weight:600;font-size:.875em;line-height:1.25;
+    padding:1px 6px;border-radius:5px;background:var(--gold);color:#fff;
+    white-space:normal;overflow-wrap:break-word;
+    -webkit-box-decoration-break:clone;box-decoration-break:clone}
+.kw-t{background:var(--teal)}
+.kw-r{background:var(--ruby)}
+.kw-s{background:var(--body)}
+.kw-i{background:var(--indigo)}
+mark{background:var(--paper);color:var(--ink);padding:2px 3px;border-radius:4px;
+     overflow-wrap:break-word;-webkit-box-decoration-break:clone;box-decoration-break:clone}
+
+/* exam flag */
+.exam{display:inline-flex;align-items:center;height:calc(var(--fs) * 1.34);padding:0 8px;margin-left:7px;
+  border-radius:5px;background:var(--ruby);color:#fff;vertical-align:middle;
+  font:700 calc(var(--fs) * .76)/1 var(--sans);letter-spacing:.13em;text-transform:uppercase}
+
+#book.no-exam .exam{display:none !important}
+
+/* fact lists */
+.facts{list-style:none;margin:16px 0;padding:0}
+.facts>li{position:relative;padding:7px 0 7px 28px;border-bottom:1px solid var(--line);
+          font-size:1.08em;line-height:1.7;break-inside:avoid}
+.facts>li:last-child{border-bottom:0}
+.facts>li::before{content:"\25B8";position:absolute;left:6px;top:7px;
+                  font-size:.8em;line-height:1.7;color:var(--gold)}
+
+/* tables */
+/* radius is applied to the corner cells rather than clipped on the wrapper,
+   so a long table can still fragment across pages with its head repeated */
+.tbl{margin:16px 0;box-shadow:var(--shadow);border-radius:6px}
+.tbl table{width:100%;border-collapse:collapse;background:var(--paper)}
+.tbl th:first-child{border-top-left-radius:6px}
+.tbl th:last-child{border-top-right-radius:6px}
+.tbl tbody tr:last-child td:first-child{border-bottom-left-radius:6px}
+.tbl tbody tr:last-child td:last-child{border-bottom-right-radius:6px}
+.tbl thead{display:table-header-group}
+.tbl tr{break-inside:avoid}
+.tbl th{background:var(--teal-deep);color:#fff;text-align:left;padding:11.5px 14px;
+  font:600 .82em/1.25 var(--sans);letter-spacing:.055em;text-transform:uppercase}
+.tbl td{padding:9px 14px;border-top:1px solid var(--line);font-size:1.02em;line-height:1.7;
+        vertical-align:top}
+.tbl tbody tr:first-child td{border-top:0}
+.tbl-gold   th{background:var(--gold)}
+.tbl-teal   th{background:var(--teal-deep)}
+.tbl-indigo th{background:var(--indigo-deep)}
+.tbl-ruby   th{background:var(--ruby-deep)}
+.box .tbl{box-shadow:none}
+
+/* wide tables — a 6-column comparison grid cannot be wider than the page box,
+   so cells wrap and the whole table steps down one or two density levels */
+.tbl{max-width:100%}
+.tbl table{max-width:100%}
+.tbl th,.tbl td{overflow-wrap:break-word;hyphens:auto}
+.tbl.fit th{padding:10px 9px;font-size:.76em;letter-spacing:.03em}
+.tbl.fit td{padding:8px 9px;font-size:.93em;line-height:1.6}
+.tbl.fit-x th{padding:9px 6px;font-size:.7em;letter-spacing:.02em}
+.tbl.fit-x td{padding:7px 6px;font-size:.85em;line-height:1.55}
+.box .tbl table{background:transparent}
+
+/* callout boxes */
+.box{--accent:var(--gold);--tint:var(--cream);--label:var(--gold);
+  margin:16px 0;padding:14px 22px;background:var(--tint);
+  border-left:2px solid var(--accent);border-radius:0 6px 6px 0;
+  box-shadow:var(--shadow);break-inside:avoid}
+.box-label{margin-bottom:13px;font:700 calc(var(--fs) * .84)/1.3 var(--sans);letter-spacing:.16em;
+           text-transform:uppercase;color:var(--label)}
+.box>*:last-child{margin-bottom:0}
+.box p:first-of-type{margin-top:0}
+.box-gold  {--accent:var(--gold);      --tint:var(--cream);      --label:var(--gold)}
+.box-teal  {--accent:var(--teal);      --tint:var(--teal-pale);  --label:var(--teal-deep)}
+.box-sage  {--accent:var(--sage);      --tint:var(--sage-pale);  --label:var(--sage-deep)}
+.box-ruby  {--accent:var(--ruby);      --tint:var(--ruby-pale);  --label:var(--ruby-deep)}
+.box-indigo,
+.box-blue  {--accent:var(--indigo);    --tint:var(--indigo-pale);--label:var(--indigo-deep)}
+
+/* two-up grid */
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:16px 0;align-items:start}
+.g2>.box{margin:0}
+
+/* memory block */
+.memory{position:relative;margin:16px 0;padding:20px 24px 18px 60px;background:var(--ink);
+        color:#fff;border-radius:8px;break-inside:avoid}
+.memory::before{content:"\1F9E0";position:absolute;left:18px;top:11px;font-size:26px;line-height:1}
+.memory-label{margin-bottom:3px;font:700 calc(var(--fs) * .84)/1.3 var(--sans);letter-spacing:.16em;
+              text-transform:uppercase;color:var(--gold-pale)}
+.memory strong{color:#fff}
+.memory em{color:var(--teal-lite)}
+.memory mark{background:rgba(253,233,162,.18);color:var(--gold-pale)}
+.memory>*:last-child{margin-bottom:0}
+#book .memory ul{list-style:none;margin:5px 0 0;padding:0}
+#book .memory li{position:relative;margin:0;padding:5px 0 5px 17px;line-height:1.6;
+  border-top:1px solid rgba(255,255,255,.10)}
+#book .memory li:first-child{border-top:0;padding-top:1px}
+#book .memory li::before{content:"\25B8";position:absolute;left:1px;top:5px;
+  font-size:.8em;color:var(--gold-pale)}
+#book .memory li:first-child::before{top:1px}
+
+/* the decorative quote is drawn inside the right padding, so it never needs
+   clipping — overflow:hidden here made Firefox print the block empty */
+.def::before{pointer-events:none}
+#book .memory li strong{color:var(--gold-pale)}
+
+/* worked example */
+.eg{margin:16px 0;padding:2px 0 2px 18px;border-left:2px dashed rgba(92,61,5,.38);break-inside:avoid}
+.eg-label{margin-bottom:8px;font:700 calc(var(--fs) * .8)/1.3 var(--sans);letter-spacing:.16em;
+          text-transform:uppercase;color:var(--gold)}
+.eg{font-size:1.04em}
+.eg p{font-size:1em}
+.eg>*:last-child{margin-bottom:0}
+.eg p:first-of-type{margin-top:0}
+
+/* flow diagram */
+.flow{display:flex;flex-wrap:wrap;align-items:stretch;gap:8px;margin:16px 0;break-inside:avoid}
+.fn{flex:1 1 0;min-width:112px;padding:9px 11px;background:var(--cream);
+    border:1px solid rgba(212,170,96,.55);border-radius:6px;
+    font-weight:700;font-size:.95em;line-height:1.35;color:var(--ink)}
+.fn small{display:block;margin-top:4px;font-weight:400;font-size:.8em;line-height:1.5;color:var(--body)}
+.fa{flex:none;align-self:center;font-size:15px;color:var(--gold-mid)}
+
+/* quick revision */
+.qr{margin:22px 0 0;padding:32px 34px 30px;background:var(--paper);color:var(--body);
+     border:1px solid var(--line);border-top:3px solid #7a5208;border-radius:8px;
+     box-shadow:var(--shadow)}
+.qr-head{display:flex;align-items:center;gap:14px;margin-bottom:8px}
+.qr-head h2{margin:0;font:700 calc(var(--fs) * .96)/1.4 var(--sans);letter-spacing:.16em;text-transform:uppercase;
+            color:var(--gold)}
+.qr-head .bolt{font-size:12px;line-height:1;flex:none}
+.qr-head .rule{flex:1;height:1px;background:var(--line);min-width:40px}
+.qr-list{margin:0;padding-left:8px;columns:2;column-gap:32px;font-size:1em}
+.qr-list li{padding-left:12px;line-height:28px;break-inside:avoid;margin-bottom:0}
+.qr-list li::marker{color:var(--gold)}
+.qr-list strong{color:var(--gold)}
+.qr-list em{color:var(--teal)}
+.qr-list mark{background:var(--gold-pale);color:var(--ink);padding:1px 4px;border-radius:4px}
+
+/* ============================================================
+   3.10  EXTENDED NOTE BLOCKS
+   definition · formula · data cards · process · hierarchy ·
+   timeline · current status · exam Q&A · caution · pros/cons ·
+   derivation · chips
+   ============================================================ */
+
+/* accent switches usable on ANY block below (and on .box) */
+.a-gold  {--accent:var(--gold);   --tint:var(--cream);       --label:var(--gold)}
+.a-teal  {--accent:var(--teal);   --tint:var(--teal-pale);   --label:var(--teal-deep)}
+.a-sage  {--accent:var(--sage);   --tint:var(--sage-pale);   --label:var(--sage-deep)}
+.a-ruby  {--accent:var(--ruby);   --tint:var(--ruby-pale);   --label:var(--ruby-deep)}
+.a-indigo{--accent:var(--indigo); --tint:var(--indigo-pale); --label:var(--indigo-deep)}
+
+/* ---- definition ---- */
+.def{--accent:var(--gold);--tint:var(--cream);--label:var(--gold);
+     position:relative;margin:18px 0;padding:15px 44px 15px 21px;
+     background:var(--tint);border:1px solid var(--line-soft);border-left:4px solid var(--accent);
+     border-radius:7px;box-shadow:var(--shadow);break-inside:avoid}
+.def::before{content:"\201C";position:absolute;right:10px;top:4px;
+             font:700 46px/1 var(--serif);color:var(--accent);opacity:.15}
+.def-term{display:block;margin-bottom:5px;color:var(--label);
+          font:700 calc(var(--fs) * .84)/1.3 var(--sans);letter-spacing:.14em;text-transform:uppercase}
+.def p{margin:0}
+.def p+p{margin-top:8px}
+
+/* ---- formula card ---- */
+.formula{--accent:var(--indigo);position:relative;margin:22px 0 18px;padding:17px 20px 15px;
+         background:var(--paper);border:1px solid var(--line);border-top:3px solid var(--accent);
+         border-radius:7px;box-shadow:var(--shadow);break-inside:avoid}
+.f-tag{position:absolute;right:13px;top:-10px;display:inline-flex;align-items:center;height:20px;
+       padding:0 10px;border-radius:10px;background:var(--accent);color:#fff;
+       font:600 calc(var(--fs) * .68)/1 var(--mono);letter-spacing:.07em}
+.f-eq{padding:5px 4px;text-align:center;overflow-wrap:break-word;
+      font:italic 600 1.22em/1.65 var(--serif);color:var(--ink)}
+.f-eq+.f-eq{margin-top:3px;border-top:1px dashed var(--line);padding-top:8px}
+.f-eq .u{font-family:var(--mono);font-style:normal;font-size:.78em;color:var(--ink-muted);
+         margin-left:6px;letter-spacing:.02em}
+.f-where{display:grid;grid-template-columns:repeat(auto-fit,minmax(148px,1fr));gap:1px 20px;
+         list-style:none;margin:11px 0 0;padding:9px 0 0;border-top:1px dashed var(--line);
+         font-size:.9em;color:var(--body)}
+.f-where li{position:relative;padding-left:13px;line-height:1.62}
+.f-where li::before{content:"\2022";position:absolute;left:1px;color:var(--accent)}
+.f-where b{font-family:var(--mono);font-weight:600;font-size:.94em;color:var(--label,var(--accent))}
+
+/* ---- data / number cards ---- */
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(116px,1fr));gap:10px;
+       margin:18px 0;break-inside:avoid}
+.stat{--accent:var(--gold);padding:12px 14px 11px;background:var(--paper);
+      border:1px solid var(--line-soft);border-top:3px solid var(--accent);border-radius:7px;
+      box-shadow:var(--shadow);break-inside:avoid}
+.stat b{display:block;font:700 1.48em/1.14 var(--serif);color:var(--accent);letter-spacing:-.01em}
+.stat span{display:block;margin-top:3px;font:400 .78em/1.45 var(--mono);color:var(--ink-muted)}
+
+/* ---- mechanism / process steps ---- */
+.steps{--accent:var(--teal);list-style:none;counter-reset:st;margin:18px 0;padding:0}
+.steps>li{position:relative;counter-increment:st;padding:1px 0 13px 40px;line-height:1.62;
+          break-inside:avoid}
+.steps>li::before{content:counter(st,decimal-leading-zero);position:absolute;left:0;top:0;
+  width:25px;height:25px;border-radius:50%;background:var(--accent);color:#fff;
+  display:flex;align-items:center;justify-content:center;
+  font:600 calc(var(--fs) * .72)/1 var(--mono)}
+.steps>li::after{content:"";position:absolute;left:12px;top:29px;bottom:1px;width:1px;background:var(--line)}
+.steps>li:last-child{padding-bottom:0}
+.steps>li:last-child::after{display:none}
+.steps>li>b:first-child{display:block;margin-bottom:2px;color:var(--accent);
+  font:700 calc(var(--fs) * .8)/1.4 var(--sans);letter-spacing:.09em;text-transform:uppercase}
+.steps>li>*:last-child{margin-bottom:0}
+
+/* ---- classification / parts hierarchy ---- */
+.tree{--accent:var(--sage);margin:18px 0;padding:15px 18px;background:var(--paper);
+      border:1px solid var(--line-soft);border-radius:7px;box-shadow:var(--shadow);break-inside:avoid}
+.tree,.tree ul{list-style:none;margin:0;padding:0}
+.tree ul{margin:2px 0 2px 9px;padding-left:15px;border-left:1px solid var(--line)}
+.tree li{position:relative;padding:3px 0 3px 15px;line-height:1.58}
+.tree>li{padding-left:0}
+.tree li::before{content:"";position:absolute;left:0;top:14px;width:10px;height:1px;background:var(--line)}
+.tree>li::before{display:none}
+.tree>li>b{display:inline-block;margin-bottom:2px;color:var(--accent);
+  font:700 calc(var(--fs) * .84)/1.4 var(--sans);letter-spacing:.1em;text-transform:uppercase}
+.tree em{color:var(--ink-muted)}
+
+/* ---- timeline / chronology ---- */
+.timeline{--accent:var(--gold);list-style:none;margin:18px 0;padding:0}
+.timeline>li{position:relative;margin-left:5px;padding:0 0 12px 24px;
+             border-left:1px solid var(--line);line-height:1.6;break-inside:avoid}
+.timeline>li:last-child{border-left-color:transparent;padding-bottom:0}
+.timeline>li::before{content:"";position:absolute;left:-4.5px;top:6px;width:8px;height:8px;
+  border-radius:50%;background:var(--accent);box-shadow:0 0 0 3px var(--paper)}
+.t-when{display:inline-block;min-width:50px;margin-right:9px;color:var(--accent);
+        font:600 .82em/1.5 var(--mono);letter-spacing:.03em}
+
+/* ---- current status / latest figures ---- */
+.latest{--accent:var(--teal-deep);position:relative;margin:18px 0;padding:14px 20px 13px;
+        background:var(--teal-pale);border:1px solid rgba(15,74,76,.20);border-radius:7px;
+        box-shadow:var(--shadow);break-inside:avoid}
+.latest-head{display:flex;align-items:center;gap:10px;margin-bottom:6px}
+.latest-head::before{content:"";flex:none;width:8px;height:8px;border-radius:50%;
+  background:var(--accent);box-shadow:0 0 0 3px rgba(15,74,76,.14)}
+.latest-head b{color:var(--accent);font:700 calc(var(--fs) * .8)/1.3 var(--sans);
+  letter-spacing:.15em;text-transform:uppercase}
+.latest-head .as-of{margin-left:auto;color:var(--ink-muted);font:400 calc(var(--fs) * .72)/1 var(--mono)}
+.latest>*:last-child{margin-bottom:0}
+.latest p{margin:0}
+.latest p+p{margin-top:7px}
+
+/* ---- exam question & answer ---- */
+.qa{--accent:var(--ruby);margin:18px 0;padding:14px 18px;background:var(--paper);
+    border:1px solid var(--line);border-radius:7px;box-shadow:var(--shadow);break-inside:avoid}
+.qa .q,.qa .a{position:relative;margin:0;padding-left:29px;line-height:1.6}
+.qa .q{font-weight:600;color:var(--ink)}
+.qa .a{margin-top:9px;padding-top:9px;border-top:1px dashed var(--line);color:var(--body)}
+.qa .q::before,.qa .a::before{position:absolute;left:0;width:21px;height:21px;border-radius:5px;
+  display:flex;align-items:center;justify-content:center;color:#fff;
+  font:700 calc(var(--fs) * .7)/1 var(--sans)}
+.qa .q::before{content:"Q";top:1px;background:var(--accent)}
+.qa .a::before{content:"A";top:10px;background:var(--sage)}
+.qa-src{display:block;margin-top:7px;color:var(--ink-muted);font:400 calc(var(--fs) * .7)/1.4 var(--mono)}
+
+/* ---- caution / common mistake ---- */
+.warn{--accent:var(--ruby);position:relative;margin:18px 0;padding:13px 18px 13px 45px;
+      background:var(--ruby-pale);border:1px solid rgba(122,15,30,.20);
+      border-left:4px solid var(--accent);border-radius:7px;box-shadow:var(--shadow);break-inside:avoid}
+.warn::before{content:"\26A0";position:absolute;left:16px;top:12px;color:var(--accent);font-size:1.05em}
+.warn>b:first-child{display:block;margin-bottom:3px;color:var(--accent);
+  font:700 calc(var(--fs) * .8)/1.3 var(--sans);letter-spacing:.13em;text-transform:uppercase}
+.warn>*:last-child{margin-bottom:0}
+.warn p{margin:0}
+
+/* ---- advantages vs limitations ---- */
+.cmp{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:18px 0;break-inside:avoid}
+.cmp>div{padding:12px 15px;border-radius:7px;border:1px solid var(--line-soft);
+         box-shadow:var(--shadow);break-inside:avoid}
+.cmp .up{background:var(--sage-pale);border-top:3px solid var(--sage)}
+.cmp .down{background:var(--ruby-pale);border-top:3px solid var(--ruby)}
+.cmp b{display:block;margin-bottom:5px;font:700 calc(var(--fs) * .78)/1.3 var(--sans);
+       letter-spacing:.13em;text-transform:uppercase}
+.cmp .up b{color:var(--sage-deep)}
+.cmp .down b{color:var(--ruby-deep)}
+.cmp ul{margin:0;padding-left:17px}
+.cmp li{margin:3px 0;line-height:1.55}
+
+/* ---- derivation / worked steps (maths) ---- */
+.deriv{--accent:var(--indigo);list-style:none;margin:18px 0;padding:12px 16px;background:var(--paper);
+       border:1px solid var(--line-soft);border-left:3px solid var(--accent);border-radius:7px;
+       box-shadow:var(--shadow);break-inside:avoid}
+.deriv>li{display:grid;grid-template-columns:1fr auto;gap:8px 14px;align-items:baseline;
+          padding:6px 0;border-bottom:1px dashed var(--line)}
+.deriv>li:last-child{border-bottom:0}
+.d-l{font:italic 500 1.06em/1.55 var(--serif);color:var(--ink);overflow-wrap:break-word}
+.d-r{text-align:right;color:var(--ink-muted);font:400 .76em/1.5 var(--mono)}
+
+/* ---- fixed-pitch block (algorithms, equations as typed, reaction lines) ---- */
+.code{margin:16px 0;padding:12px 15px;background:#fbf9f1;border:1px solid var(--line-soft);
+      border-left:3px solid var(--ink-muted);border-radius:6px;white-space:pre-wrap;
+      overflow-wrap:break-word;break-inside:avoid;
+      font:400 .84em/1.62 var(--mono);color:var(--ink)}
+
+/* ---- keyword chips ---- */
+.chips{display:flex;flex-wrap:wrap;gap:6px;list-style:none;margin:14px 0;padding:0}
+.chips li{padding:2px 10px;border-radius:20px;background:var(--cream);border:1px solid var(--line);
+          color:var(--gold);font:400 .82em/1.55 var(--mono)}
+
+/* ---- vertical flow + node roles ---- */
+.flow-v{flex-direction:column;align-items:stretch}
+.flow-v .fa{align-self:center;transform:rotate(90deg)}
+.fn-a{background:var(--teal-pale);border-color:rgba(15,74,76,.30)}
+.fn-x{background:var(--sage-pale);border-color:rgba(42,77,46,.30)}
+
+/* ============================================================
+   4. PRINT  — reproduces the source PDF page box exactly
+   ============================================================ */
+@media print{
+  @page{
+    size:A4;
+    margin:var(--pg-top) var(--pg-side) var(--pg-bottom);
+    @bottom-center{
+      content:"- " counter(page) " -";
+      font-family:'Fira Code',monospace;font-weight:300;font-size:11px;
+      letter-spacing:.12em;color:#7a6440;
+    }
+  }
+  html,body{height:auto;background:#fff}
+  #app{display:block;height:auto}
+  #rail,#status,#blank{display:none !important}
+  #canvas{overflow:visible;padding:0;background:none}
+  .sheet{width:auto;margin:0;padding:0;box-shadow:none}
+  #book{font-size:var(--fs) !important}
+  .cover{height:262mm}
+  .divider{min-height:262mm}
+  .no-print{display:none !important}
+  *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+
+  /* A blurred shadow cannot be drawn as vector art, so Chrome rasterises the
+     block behind it. Hundreds of shadowed cards turn a 300 kB vector PDF into
+     a 20 MB bitmap. Print with flat edges unless the user opts back in. */
+  #book:not(.rich) *{box-shadow:none !important}
+  #book:not(.rich) .tbl{border:1px solid var(--line)}
+  #book:not(.rich) .memory{border:1px solid var(--ink)}
+
+  /* Firefox treats overflow:hidden as a scroll container and can drop its
+     contents entirely when printing. Nothing in the book needs clipping. */
+  #book .def,#book .box,#book .memory,#book .formula,#book .latest,
+  #book .qa,#book .warn,#book .tree,#book .deriv,#book .cmp>div{overflow:visible}
+}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- ================= control rail ================= -->
+  <aside id="rail">
+    <header>
+      <div class="brand"><i></i><h1>Study Book</h1></div>
+      <p>JSON &rarr; print-ready A4 book</p>
+    </header>
+
+    <div class="scroll">
+      <div class="grp">
+        <h2>Source files</h2>
+        <div id="drop" tabindex="0" role="button" aria-label="Add study book JSON files">
+          <b>Add JSON files</b>
+          <span>Drop them here or click to browse</span>
+        </div>
+        <input id="file" type="file" accept=".json,application/json" multiple>
+      </div>
+
+      <div class="grp">
+        <h2>Parts in this book</h2>
+        <div id="parts"><p class="empty">Nothing loaded yet.</p></div>
+      </div>
+
+      <div class="grp">
+        <h2>Cover</h2>
+        <label class="f"><span>Book title</span><input id="opt-title" placeholder="From file"></label>
+        <label class="f"><span>Blurb source</span><select id="opt-blurb"></select></label>
+        <label class="f"><span>Edition</span><input id="opt-edition" value="Extendable"></label>
+      </div>
+
+      <div class="grp">
+        <h2>Reading</h2>
+        <label class="f"><span>Body text size</span>
+          <select id="opt-fs">
+            <option value="13.5px">Compact &mdash; 13.5px</option>
+            <option value="15px" selected>Standard &mdash; 15px</option>
+            <option value="16.5px">Large &mdash; 16.5px</option>
+            <option value="18px">Extra large &mdash; 18px</option>
+          </select>
+        </label>
+        <label class="chk"><input type="checkbox" id="opt-2col">Two-column body text</label>
+        <label class="chk"><input type="checkbox" id="opt-rich">Shadows in PDF (bigger file)</label>
+      </div>
+
+      <div class="grp">
+        <h2>AI note authoring</h2>
+        <label class="f"><span>Subject profile</span>
+          <select id="opt-profile">
+            <option value="other" selected>General / mixed source</option>
+            <option value="math">Mathematics</option>
+            <option value="physics">Physics</option>
+            <option value="chem">Chemistry</option>
+            <option value="bio">Biology</option>
+            <option value="med">Medical / Veterinary</option>
+            <option value="gs">General studies</option>
+            <option value="cs">Engineering / CS</option>
+          </select>
+        </label>
+        <button class="btn btn-s" id="prompt-open">Open authoring prompt</button>
+        <button class="btn btn-s" id="sample-load">Load block gallery</button>
+        <p class="hint">The prompt tells an AI exactly which blocks exist and how to
+          structure a chapter for this subject.</p>
+      </div>
+
+      <div class="grp">
+        <h2>Include</h2>
+        <label class="chk"><input type="checkbox" id="opt-cover" checked>Cover page</label>
+        <label class="chk"><input type="checkbox" id="opt-toc" checked>Table of contents</label>
+        <label class="chk"><input type="checkbox" id="opt-div" checked>Part divider pages</label>
+        <label class="chk"><input type="checkbox" id="opt-chlabel" checked>Chapter labels (Chapter 01&hellip;)</label>
+        <label class="chk"><input type="checkbox" id="opt-exam" checked>&ldquo;Exam Hot&rdquo; flags</label>
+        <label class="chk"><input type="checkbox" id="opt-qr" checked>Quick revision spreads</label>
+      </div>
+    </div>
+
+    <footer>
+      <button class="btn btn-p" id="print" disabled>Save as PDF</button>
+      <button class="btn btn-s" id="export" disabled>Export standalone HTML</button>
+      <p class="hint">In the print dialog choose <b>A4</b>, margins <b>Default</b>, and tick
+        <b>Background graphics</b>.</p>
+    </footer>
+  </aside>
+
+  <!-- ================= preview ================= -->
+  <main id="canvas">
+    <div id="status"><b>Preview</b><span id="meta"></span></div>
+    <div class="sheet">
+      <div id="blank">
+        <div class="mk">&para;</div>
+        <p>Load one or more study-book JSON files to compose the book. Pages are laid out when you print.</p>
+      </div>
+      <div id="book"></div>
+    </div>
+  </main>
+
+</div>
+<div id="modal" class="no-print" role="dialog" aria-modal="true" aria-labelledby="modal-h">
+  <div class="win">
+    <header>
+      <div>
+        <h2 id="modal-h">Note authoring prompt</h2>
+        <p id="modal-sub">General / mixed source</p>
+      </div>
+      <button id="modal-x" title="Close" aria-label="Close">&times;</button>
+    </header>
+    <textarea id="prompt-text" readonly spellcheck="false"></textarea>
+    <footer>
+      <button class="btn btn-p" id="prompt-copy">Copy prompt</button>
+      <button class="btn btn-s" id="prompt-dl">Download .md</button>
+      <span class="m-note" id="prompt-note">Paste into any AI, add your topic, drop the JSON back here.</span>
+    </footer>
+  </div>
+</div>
+
+<script type="text/plain" id="prompt-core">
+═══════════════════════════════════════════════════════════════
+STUDY BOOK — NOTE AUTHORING PROMPT
+Produces one JSON file that renders as a print-ready A4 book.
+═══════════════════════════════════════════════════════════════
+
+ROLE
+You are a subject expert and textbook editor. You turn a topic — or a
+supplied source text — into dense, exam-grade study notes and return
+them as ONE JSON file for the Study Book PDF generator.
+
+Write for a reader who already has the syllabus and needs the notes to
+replace the textbook: every definition exact, every number carrying its
+unit, every classification complete. Prose is compressed but never
+vague. If a fact has a value, state the value.
+
+───────────────────────────────────────────────────────────────
+1. OUTPUT CONTRACT
+───────────────────────────────────────────────────────────────
+• Return exactly one JSON object. Nothing before it, nothing after it.
+  No markdown fences, no commentary, no explanation of what you did.
+• Valid JSON: double quotes, no trailing commas, no comments.
+• All rich content lives inside chapters[].html as an HTML fragment
+  string. Escape nothing except what JSON requires (\" and \\).
+• Never invent facts to fill a block. If a block has no real content
+  for this topic, omit the block.
+
+───────────────────────────────────────────────────────────────
+2. FILE SCHEMA
+───────────────────────────────────────────────────────────────
+{
+  "part":        1,                    // integer. Book order. One file = one part.
+  "subject":     "Principles of Animal Nutrition",   // the parent course/book
+  "title":       "Feed Technology",                  // this part's short name
+  "subtitle":    "Processing, Storage, Conservation & Quality Control",
+  "badge":       "Veterinary Science · Feed Technology",  // divider-page badge
+  "coverSub":    "One paragraph, 40–70 words, naming every major topic covered.",
+  "tags":        ["...", "..."],       // 12–30 keywords, exam-searchable
+  "source":      "Textbook name (Chapters 17–21)",   // or "Syllabus: NEET Biology"
+  "subjectType": "vet",                // physics|chem|bio|math|gs|med|vet|cs|other
+  "toc":         [ { "num": "01", "title": "Chapter title" } ],
+  "chapters":    [ { "num": "01", "title": "Chapter title", "html": "<p>…</p>" } ],
+  "quickRevision": {
+    "title": "⚡ Master Quick Revision — 40 Must-Know Points",
+    "items": [ "<strong>Term</strong> = crisp one-line fact with the number" ]
+  }
+}
+
+RULES
+• num is the bare number only — "01", "02". Never write "Chapter 01";
+  the generator adds the word "Chapter" itself.
+• toc must mirror chapters exactly: same count, same order, same titles.
+• Chapter count is set by the material, never by a quota. There is no
+  upper limit. If the source or syllabus carries 24, 30 or 40 distinct
+  topics, write 24, 30 or 40 chapters. Never merge unrelated topics and
+  never drop one to land inside a range. 8–20 is only the usual size of
+  a single part, not a ceiling.
+• If the material runs past ~20 chapters, do not shrink the book to fit
+  it. Either write the extra chapters into this part, or split the book
+  by concept into consecutive parts and generate one part per file —
+  this part now, the next part in the following response. Every file
+  still returns exactly one JSON object, numbers its own chapters from
+  "01", and carries its own toc and quickRevision.
+• Each chapter 350–800 words — compressed, not thin. See section 6.
+• quickRevision: 30–50 single-line items, each a testable fact, light
+  <strong>/<em>/<mark> only. These print in two columns — keep each
+  item under about 20 words.
+• Chapter titles are noun phrases, not questions. No numbering inside
+  the title text.
+
+───────────────────────────────────────────────────────────────
+3. HTML VOCABULARY  — only these classes render
+───────────────────────────────────────────────────────────────
+Allowed tags: p h3 h4 ul ol li table thead tbody tr th td strong em
+mark sup sub small br hr span div b.
+Forbidden: style/script/img/iframe/link, id attributes, inline style
+attributes, class names not listed here, external CSS or fonts.
+
+── STRUCTURE ──────────────────────────────────────────────────
+<h3>Section heading <span class="exam">EXAM HOT</span></h3>
+   Section head. The EXAM HOT flag marks high-yield material and can be
+   toggled off at print time — use it on 2–5 heads per chapter, no more.
+<h4>Sub-heading</h4>
+<p>Body paragraph.</p>
+<hr>
+
+── KEYWORDS & EMPHASIS ────────────────────────────────────────
+<span class="kw">term</span>              gold pill — the chapter's core terms
+<span class="kw kw-t">term</span>         teal   <span class="kw kw-r">term</span> ruby
+<span class="kw kw-s">term</span>         slate  <span class="kw kw-i">term</span> indigo
+<strong>bold</strong>  <em>italic</em>  <mark>highlight</mark>
+Use kw 3–8 times per chapter, on terms a reader would look up. Colour
+carries meaning: pick one colour per category and keep it consistent
+through the whole file.
+
+── DEFINITION ─────────────────────────────────────────────────
+<div class="def"><span class="def-term">Feed technology</span>
+<p>The application of physical, chemical and engineering techniques to
+increase nutrient utilisation of feeds and fodders.</p></div>
+   Open most chapters with one. Add class a-teal / a-sage / a-ruby /
+   a-indigo to recolour.
+
+── FORMULA CARD ───────────────────────────────────────────────
+<div class="formula"><span class="f-tag">Eq 4.2</span>
+<div class="f-eq">DCP % = (CP intake − CP faeces) / CP intake × 100 <span class="u">%</span></div>
+<ul class="f-where">
+  <li><b>CP</b> crude protein (g)</li>
+  <li><b>DCP</b> digestible crude protein</li>
+</ul></div>
+   One card per formula. f-tag = equation number or law name. Repeat
+   <div class="f-eq"> for a derived second line. Always give the legend.
+
+── DERIVATION / WORKED STEPS ──────────────────────────────────
+<ol class="deriv">
+  <li><span class="d-l">x² + 2x = 3</span><span class="d-r">given</span></li>
+  <li><span class="d-l">(x+1)² = 4</span><span class="d-r">complete the square</span></li>
+</ol>
+   Left = the line of algebra, right = the justification. Every step
+   gets a reason.
+
+── NUMBERS AT A GLANCE ────────────────────────────────────────
+<div class="stats">
+  <div class="stat"><b>540+</b><span>AAFCO ingredients, 1985</span></div>
+  <div class="stat a-teal"><b>2–3 mm</b><span>optimal pellet diameter</span></div>
+</div>
+   3–6 cards. Use for totals, limits, thresholds, standard values —
+   the figures an examiner asks for directly.
+
+── MECHANISM / PROCESS ────────────────────────────────────────
+<ol class="steps">
+  <li><b>Conditioning</b>Steam at 80–85 °C for 30–45 s raises moisture to 16–17 %.</li>
+  <li><b>Extrusion</b>Mash is forced through the die under 40–60 bar.</li>
+</ol>
+   Numbered spine. The leading <b> is the step name; the rest is what
+   happens, with conditions and numbers.
+
+── FLOW DIAGRAM ───────────────────────────────────────────────
+<div class="flow">
+  <div class="fn fn-a">Grain<small>whole</small></div>
+  <div class="fa">→</div>
+  <div class="fn">Hammer mill<small>screen 3 mm</small></div>
+  <div class="fa">→</div>
+  <div class="fn fn-x">Mash</div>
+</div>
+   Horizontal by default. Use <div class="flow flow-v"> for a vertical
+   chain (arrows rotate automatically). fn-a = input/start, fn-x =
+   output/end. 3–7 nodes; <small> carries the condition.
+
+── CLASSIFICATION / PARTS ─────────────────────────────────────
+<ul class="tree">
+  <li><b>Kingdom Monera</b>
+    <ul>
+      <li>Archaebacteria <em>— halophiles, methanogens, thermoacidophiles</em></li>
+      <li>Eubacteria <em>— cyanobacteria, mycoplasma</em></li>
+    </ul>
+  </li>
+</ul>
+   The right block for "types of", "parts of", "classified into".
+   Nest two or three levels, never more.
+
+── COMPARISON TABLE ───────────────────────────────────────────
+<div class="tbl"><table class="tbl-teal">
+<thead><tr><th>Character</th><th>Monera</th><th>Protista</th></tr></thead>
+<tbody><tr><td>Cell type</td><td>Prokaryotic</td><td>Eukaryotic</td></tr></tbody>
+</table></div>
+   Header colour: tbl-gold, tbl-teal, tbl-indigo, tbl-ruby. Keep to 6
+   columns maximum and keep cell text short — wide tables are
+   auto-compressed but readability drops. Always include <thead>.
+
+── ADVANTAGES vs LIMITATIONS ──────────────────────────────────
+<div class="cmp">
+  <div class="up"><b>Advantages</b><ul><li>Reduces selective feeding</li></ul></div>
+  <div class="down"><b>Limitations</b><ul><li>High energy cost</li></ul></div>
+</div>
+
+── CAUTION / COMMON MISTAKE ───────────────────────────────────
+<div class="warn"><b>Common mistake</b>
+<p>Aflatoxin B1 is produced by <em>Aspergillus flavus</em>, not by
+<em>Penicillium</em> — that species makes ochratoxin.</p></div>
+
+── CALLOUT BOX ────────────────────────────────────────────────
+<div class="box box-gold"><div class="box-label">Key point</div>
+<p>…</p></div>
+   Variants: box-gold, box-teal, box-sage, box-ruby, box-indigo.
+   Two boxes side by side: <div class="g2">…two boxes…</div>
+
+── EXAMPLE / NUMERICAL ────────────────────────────────────────
+<div class="eg"><div class="eg-label">Worked example</div>
+<p>A 3 mm screen at 3600 rpm gives a geometric mean diameter of 720 µm…</p></div>
+
+── EXAM QUESTION ──────────────────────────────────────────────
+<div class="qa">
+  <p class="q">Which mycotoxin is regulated at 20 ppb in dairy feed?</p>
+  <p class="a">Aflatoxin B1 — FDA action level 20 ppb; EU limit 5 ppb.
+  <span class="qa-src">AIPVT 2019</span></p>
+</div>
+
+── TIMELINE ───────────────────────────────────────────────────
+<ul class="timeline">
+  <li><span class="t-when">1875</span>First calf-meal plant, Illinois.</li>
+  <li><span class="t-when">1909</span>AAFCO established.</li>
+</ul>
+
+── CURRENT STATUS ─────────────────────────────────────────────
+<div class="latest"><div class="latest-head"><b>Current status</b>
+<span class="as-of">as of 2024</span></div>
+<p>India's compound feed output is about 42 million t/yr; CLFMA
+reported 8–9 % annual growth.</p></div>
+   Use for live figures, latest guidelines, present-day counts. Always
+   date it in the as-of span so the reader knows how fresh it is.
+
+── CHAPTER RECAP (memory block) ───────────────────────────────
+<div class="memory"><div class="memory-label">Chapter recap</div>
+<ul>
+  <li><strong>Whittaker 1969</strong> — five kingdoms on cell type,
+  body organisation, nutrition, reproduction, phylogeny.</li>
+  <li><strong>Monera</strong> — only prokaryotic kingdom; 3 shapes,
+  cell wall of peptidoglycan.</li>
+  <li><strong>Mnemonic</strong> — "King Philip Came Over For Good Soup"
+  = Kingdom, Phylum, Class, Order, Family, Genus, Species.</li>
+</ul></div>
+   MANDATORY: every chapter ends with exactly one memory block, and it
+   is the last thing in the chapter's html.
+
+   It is the chapter's own revision summary — 5–8 bullets that let a
+   reader recall the whole chapter without rereading it. Each bullet is
+   one line, opens with a <strong>term, name, year or value</strong>,
+   and carries the fact that would be tested. Include the chapter's
+   mnemonic or memory trick as one of the bullets when one exists.
+
+   Do not restate section headings ("we covered classification"). Every
+   bullet must carry content: a number, a name, a distinction, a rule.
+
+   This is per chapter, and is separate from the file-level
+   quickRevision, which aggregates the whole part. A recap bullet may
+   repeat a quickRevision item — that repetition is deliberate.
+
+── FACT LIST ──────────────────────────────────────────────────
+<ul class="facts"><li>Ruled lines, one fact each.</li></ul>
+<ul class="chips"><li>Term</li><li>Term</li></ul>
+<div class="code">step 1 …
+step 2 …</div>
+
+───────────────────────────────────────────────────────────────
+4. CHAPTER ARCHITECTURE
+───────────────────────────────────────────────────────────────
+Follow this spine, dropping anything the topic does not support. Do not
+follow it so rigidly that every chapter looks identical — vary the
+order and the block mix with the material.
+
+  1. Opening paragraph — what this is and why it matters (2–4 lines)
+  2. <div class="def"> — the formal definition
+  3. Classification / parts — <ul class="tree"> or a comparison table
+  4. Mechanism / process — <ol class="steps"> plus a <div class="flow">
+  5. Formulas & parameters — <div class="formula">, then values in a table
+  6. Data — <div class="stats"> for headline numbers, tables for the rest
+  7. Examples — <div class="eg">, worked and numerical
+  8. Advantages / limitations — <div class="cmp">
+  9. Exceptions & traps — <div class="warn">
+ 10. Current status — <div class="latest">
+ 11. Exam questions — <div class="qa">
+ 12. Chapter recap — <div class="memory"> with 5–8 summary bullets
+     (mandatory, always last)
+
+Rhythm: never stack two blocks of the same type back to back, and never
+run more than about 150 words of plain <p> without a block. Aim for
+roughly 6–10 blocks per chapter.
+
+───────────────────────────────────────────────────────────────
+5. REWRITE — NEVER TRANSCRIBE
+───────────────────────────────────────────────────────────────
+A source text is raw material, not a draft. Nothing may be copied from
+it sentence by sentence. Your job is to know the subject and rebuild it.
+
+WORK IN THIS ORDER
+1. Read the whole source before writing one word. List what it actually
+   contains: every fact, figure, name, rule and exception.
+2. Regroup those facts by concept. The source's order reflects how it
+   was printed or lectured, not how the topic is best learned.
+3. Decide the chapter list from your grouping, not from the source's
+   headings. Merge thin sections, split overloaded ones. One chapter =
+   one coherent concept.
+4. Assign every fact to the block type that carries it best.
+5. Only then write.
+
+CONVERT PROSE INTO STRUCTURE
+A paragraph naming several types            → <ul class="tree">
+A paragraph describing a sequence           → <ol class="steps"> + flow
+A paragraph carrying 3+ numbers             → <div class="stats">
+A paragraph contrasting two things          → a table or <div class="cmp">
+A paragraph stating a relationship          → <div class="formula">
+A paragraph of an exception or warning      → <div class="warn">
+A paragraph you cannot convert              → keep it, but 3 sentences max
+
+If a passage survives as prose unchanged, you have not done the work.
+
+COMPLETE THE SOURCE FROM YOUR OWN KNOWLEDGE
+The source will be incomplete. Fill every gap silently:
+• a rule stated without its exception → add the exception
+• a formula without units or conditions → add them
+• a discovery without its scientist or year → add them
+• a classification missing a branch → complete it
+• a figure that is now out of date → give the current one
+• a topic the syllabus tests but the source skips → write it anyway
+Never write "the source does not say". Never flag what you added. The
+notes must read as one authoritative voice.
+
+MIRROR THE CONTENT, NOT THE WORDING
+Restructuring changes the shape of the notes. It must never shrink what
+they cover. The output is a complete mirror of the source's substance:
+
+  Rewrite freely   sentences, paragraph order, chapter order, phrasing,
+                   the format a fact is presented in
+  Mirror exactly   every technical term, every number, every name, date
+                   and unit, every item of every list, every branch of
+                   every classification, every exception, every stated
+                   condition, every worked example
+
+KEEP THE SOURCE'S VOCABULARY
+Technical terms are data, not style. Reproduce them exactly as the
+source writes them — named laws, reactions, species, syndromes, acts,
+theorems, abbreviations, symbols. Never substitute a synonym for a term
+the exam will use, and never simplify a term into a description. Where
+the source gives an abbreviation, give it too, expanded once.
+
+Put the source's central terms in <span class="kw"> so they survive
+visually as well.
+
+NO TRUNCATION
+If the source lists nine causes, your notes carry nine. Never compress
+a list by writing "such as", "etc.", "and others", "among these", or by
+keeping only the examples you judge important. Dropping list items is
+the single most damaging failure — it is invisible in the output and
+fatal in the exam.
+
+Nothing in the source is discarded as minor. If a fact seems too small
+to deserve a paragraph, it becomes a table row, a recap bullet or a
+stat tile — but it stays.
+
+DEDUPLICATE, DO NOT DELETE
+A fact stated three times across the source is stated once, in the
+chapter where it belongs. That is the only content the output loses,
+and it loses none of the information.
+
+WORK CHECK
+Before writing each chapter, list the source facts it must carry. After
+writing it, walk that list and confirm every one appears. A fact you
+cannot find a place for means the chapter structure is wrong, not that
+the fact is expendable.
+
+WHAT MUST BE ADDED
+Sources rarely contain what exams need. Add, in every chapter that
+supports it: the comparison table, the exception panel, the current
+status with its date, the exam question, the recap block.
+
+───────────────────────────────────────────────────────────────
+6. COMPRESSION — SAY IT ONCE, SAY IT SHORT
+───────────────────────────────────────────────────────────────
+Write for a reader revising the night before. Density is the product.
+
+THE TEST
+Every sentence must carry a fact that could be examined. If a sentence
+can be deleted without losing a fact, delete it.
+
+COVERAGE OUTRANKS BREVITY
+These limits govern how many words a fact costs, never how many facts
+you keep. If the content will not fit the cap, split it into another
+block, another paragraph or another chapter. Never drop an item, a
+term, a number or a list entry to hit a word count. A chapter that runs
+long because the source is dense is correct; a chapter that reads short
+because facts were cut is a failure.
+
+HARD LIMITS
+• Paragraph: 3 sentences, about 45 words. Then break it or convert it.
+• List item / recap bullet: 20 words.
+• Table cell: 8 words. Prefer 3.
+• Chapter: 350–800 words in total, of which prose is under half. The
+  rest is blocks. 6–10 blocks per chapter. Dense source material may
+  push past 800 — let it, or split the chapter in two.
+
+STYLE
+• Fragments are correct inside lists, tables, tree entries, stat
+  captions and flow nodes. Full sentences only in the opening
+  paragraph and in definitions.
+• Delete these openings on sight: "It is important to note that",
+  "In general", "It can be said that", "This process involves",
+  "As we know", "Let us now discuss". Start with the subject.
+• Use symbols where they are unambiguous: → = ± ≈ ≤ ≥ / & vs.
+  "increases with" → "∝". "results in" → "→".
+• Cut every adjective that carries no measurement. "Very high
+  temperature" is noise; "180–200 °C" is a fact. Cutting applies to
+  filler words only — never to a term, a name, a figure or a qualifier
+  that changes meaning ("only", "except", "anaerobic", "in ruminants").
+• No chapter opens with "In this chapter…" and none closes with a
+  summary paragraph. The recap block is the only summary.
+• Never describe a table in prose above it. Write the table, then add
+  only what the table cannot show.
+• State a thing once. If two chapters need it, put it where it is
+  first defined and refer to it by name afterwards.
+
+───────────────────────────────────────────────────────────────
+7. WRITING RULES
+───────────────────────────────────────────────────────────────
+• Numbers carry units and, where they exist, ranges: "80–85 °C", not
+  "high temperature". Percentages, doses, limits, dates — always exact.
+• Name names: scientists, years, statutes, standards, species, brands
+  of equipment. A note that says "a scientist proposed" is a failed note.
+• Use the reader's exam vocabulary. Where a term has a synonym in the
+  syllabus, give both once: "phycomycetes (lower fungi)".
+• Prefer the special characters directly — ° µ ± × → ⇌ ≤ ≥ α β ₂ ² —
+  and <sup>/<sub> for anything they cannot cover.
+• Write & as &amp;, < as &lt;, > as &gt; inside HTML text.
+• No filler sentences, no "in this chapter we will", no summaries that
+  repeat what was just said.
+• British or American spelling — pick one and hold it for the file.
+
+───────────────────────────────────────────────────────────────
+8. BEFORE YOU RETURN — CHECK
+───────────────────────────────────────────────────────────────
+□ Parses as JSON. One object. No fences.
+□ toc matches chapters one-for-one; nums are "01" style, not "Chapter 01".
+□ Every class used appears in section 3. No inline style, no id.
+□ Every table has thead and ≤6 columns.
+□ Every formula card has its legend; every number has its unit.
+□ 30–50 quickRevision items, each one line.
+□ EXAM HOT used sparingly; no chapter flagged end to end.
+□ Every chapter closes with one memory block of 5–8 recap bullets.
+□ No sentence copied from the source; every convertible paragraph has
+  become a block.
+□ Coverage mirrors the source: every term, number, name, list item,
+  classification branch and exception is present.
+□ No list truncated. No "etc.", "such as", "and others" standing in for
+  items the source actually named.
+□ The source's technical vocabulary is reproduced exactly, not
+  paraphrased into plain words.
+□ No paragraph over 3 sentences. No chapter over 800 words.
+□ Chapter count driven by the material, not trimmed to a range. Topics
+  past the 20th are written as their own chapters or carried into the
+  next part — never merged away, never dropped.
+□ Every fact in the source survives somewhere; gaps filled from your
+  own knowledge, silently. Nothing cut to meet a word limit.
+□ Nothing invented. Uncertain figures are omitted, not guessed.
+</script>
+<script type="text/plain" id="pf-math">
+───────────────────────────────────────────────────────────────
+9. SUBJECT PROFILE — MATHEMATICS   ("subjectType": "math")
+───────────────────────────────────────────────────────────────
+Lead with structure, not prose. A maths chapter is a chain of stated
+results, each earned.
+
+Chapter spine
+  def → statement of theorem/rule → deriv (proof or derivation) →
+  formula cards (the results worth memorising) → eg (worked problems,
+  easy → hard) → warn (sign errors, domain traps) → qa (previous-year
+  problems) → recap (memory block: the results, conditions and traps)
+
+Block mix
+• <div class="formula"> for every standalone result. f-tag carries the
+  name: "Binomial theorem", "Eq 3.1", "Cauchy–Schwarz".
+• <ol class="deriv"> is the workhorse — every proof, every worked
+  solution. Left column the algebra, right column the reason
+  ("by parts", "AM–GM", "differentiate both sides").
+• <ul class="tree"> for case splits and classification of conics,
+  matrices, differential-equation types.
+• Tables for standard integrals/derivatives, trig values, series tests.
+
+Rules
+• State conditions with the result — domain, convergence, when it fails.
+  A formula without its condition is wrong.
+• Give the general form first, then the special cases students actually
+  use.
+• Every worked example ends with the answer boxed as a
+  <div class="stat"><b>x = 7</b><span>final answer</span></div> or a
+  bold final line.
+• Write maths inline with real symbols: ∫, Σ, √, π, ≠, ∈, ⊂, ∞,
+  <sup>n</sup>, <sub>i</sub>. Keep one notation convention per file.
+• Include the counterexample wherever a converse fails — that is the
+  examined point.
+• Recap bullets: each result with its condition, plus the two most
+  common algebra traps.
+</script>
+<script type="text/plain" id="pf-physics">
+───────────────────────────────────────────────────────────────
+9. SUBJECT PROFILE — PHYSICS   ("subjectType": "physics")
+───────────────────────────────────────────────────────────────
+Chapter spine
+  def → the law in words → formula card with symbols, SI units and
+  dimensional formula → deriv (derivation from first principles) →
+  stats (constants, standard values) → eg (numerical, with units
+  carried through) → tbl (comparison of cases, graph behaviour) →
+  warn (sign conventions, common misapplication) → qa → recap
+
+Block mix
+• Every formula card lists units in the legend:
+  <li><b>κ</b> thermal conductivity — W m⁻¹ K⁻¹</li>
+• Add the dimensional formula as a second f-eq line:
+  <div class="f-eq">[F] = M L T⁻²</div>
+• <div class="stats"> for constants: c, h, g, ε₀, R — value and unit.
+• Describe graphs in words plus a table of what varies with what;
+  the renderer has no plotting, so state slope, intercept and shape.
+• <div class="flow"> for ray paths, circuit stages, energy conversions.
+
+Rules
+• Always state the frame of reference, the sign convention and the
+  assumptions (ideal gas, frictionless, small oscillation).
+• Numericals show substitution before the answer, and the answer with
+  correct significant figures and unit.
+• Distinguish scalar from vector explicitly; use bold or an arrow.
+• Note the limiting/edge case for every law — where it breaks down.
+• Recap bullets: each law, its formula, its SI unit and the one
+  assumption that breaks it.
+</script>
+<script type="text/plain" id="pf-chem">
+───────────────────────────────────────────────────────────────
+9. SUBJECT PROFILE — CHEMISTRY   ("subjectType": "chem")
+───────────────────────────────────────────────────────────────
+Chapter spine
+  def → structure/bonding → trends table → mechanism as steps + flow →
+  named reactions → conditions and reagents table → eg → warn
+  (exceptions) → qa → recap
+
+Block mix
+• Reactions in <div class="code"> so arrows and conditions stay aligned:
+  CH₃CHO + HCN → CH₃CH(OH)CN     (base, 0–5 °C)
+• <ol class="steps"> for mechanisms — one step per electron movement,
+  naming the intermediate (carbocation, tetrahedral intermediate).
+• <div class="formula"> for physical chemistry only (rate laws,
+  Nernst, Arrhenius, equilibrium expressions) with full legends.
+• Tables for periodic trends, reagent → product maps, and the
+  ubiquitous "reagent / condition / product / note" grid.
+• <div class="warn"> for every anomaly: Cr and Cu configurations,
+  N–O bond order, the halogen exceptions. Exceptions are the exam.
+
+Rules
+• Give conditions with every reaction: reagent, solvent, temperature,
+  catalyst. A reaction without conditions is not an answer.
+• Name reactions by name and by inventor year where standard.
+• Use subscripts and superscripts properly: H₂SO₄, Cu²⁺, sp³.
+• For organic chemistry, state the stereochemical outcome and the
+  regiochemistry (Markovnikov / anti-Markovnikov) each time.
+• Recap bullets: reagent → product pairs, conditions, and every
+  anomaly named in the chapter.
+</script>
+<script type="text/plain" id="pf-bio">
+───────────────────────────────────────────────────────────────
+9. SUBJECT PROFILE — BIOLOGY   ("subjectType": "bio")
+───────────────────────────────────────────────────────────────
+Chapter spine
+  def → classification tree → comparison table across groups →
+  process as steps + flow → examples with real species names →
+  stats (counts, sizes, numbers examiners ask) → warn (exceptions) →
+  qa → recap (memory block, mnemonic as one bullet)
+
+Block mix
+• <ul class="tree"> is central — kingdom/phylum/class hierarchies,
+  types of tissue, categories of hormone.
+• The multi-column comparison table is the highest-yield block in
+  biology. Keep the character names in column one.
+• <ol class="steps"> for physiological and molecular processes; name
+  the enzyme, the site (organelle/tissue) and the product per step.
+• <div class="stats"> for the numbers: 46 chromosomes, 4 chambers,
+  ~10¹⁴ gut bacteria, 206 bones.
+• Mnemonics matter here — put the chapter's mnemonic in the recap
+  block alongside the classification and exception bullets.
+
+Rules
+• Binomial names in <em>italics</em>, genus capitalised: <em>Homo
+  sapiens</em>. Give the common name once alongside.
+• Give the discoverer and year for every named system or structure.
+• State the exception explicitly whenever a rule has one — that is
+  where the marks sit.
+• Where a diagram would normally carry the answer, replace it with a
+  flow chart plus a labelled parts list in a tree.
+• Recap bullets: the classification skeleton, the examples, the
+  numbers, and the mnemonic.
+</script>
+<script type="text/plain" id="pf-med">
+───────────────────────────────────────────────────────────────
+9. SUBJECT PROFILE — MEDICAL / VETERINARY / DISEASE
+   ("subjectType": "med" or "vet")
+───────────────────────────────────────────────────────────────
+One disease or one system per chapter, in clinical order.
+
+Chapter spine
+  def (disease, one line) → aetiology (agent, strain, reservoir) →
+  epidemiology in stats (incidence, mortality, host range) →
+  pathogenesis as flow or steps → clinical signs by species/stage →
+  lesions / post-mortem → diagnosis table (test / sample / sensitivity)
+  → treatment (drug, dose, route, duration, withdrawal) → prevention
+  and control (vaccine, schedule) → latest (outbreak status, notifiable
+  status) → warn (differentials) → qa → recap
+
+Block mix
+• <div class="stats"> for morbidity, mortality, incubation period,
+  zoonotic risk — the figures asked in one-mark questions.
+• Diagnosis as a table: test, sample required, when positive, limits.
+• Drugs in a table: drug, dose (mg/kg), route, frequency, duration,
+  withdrawal period for milk and meat.
+• <div class="warn"> for differential diagnosis — the diseases it is
+  confused with and the one feature that separates them.
+• <div class="latest"> for current OIE/WOAH status, national programme
+  stage, and reporting requirements, always dated.
+
+Rules
+• Doses are exact, per kg body weight, with the species named. Never
+  write a dose without route and frequency.
+• Name the causal agent to species and, where it matters, serotype.
+• Distinguish species differences explicitly — cattle vs buffalo,
+  dog vs cat, adult vs neonate.
+• Flag zoonotic and notifiable diseases in the opening definition.
+• This is study material, not clinical instruction: no advice framed as
+  a treatment plan for a specific live patient.
+• Recap bullets: agent, host, incubation, key sign, diagnostic test
+  of choice, drug with dose, and control measure.
+</script>
+<script type="text/plain" id="pf-gs">
+───────────────────────────────────────────────────────────────
+9. SUBJECT PROFILE — GENERAL STUDIES / CIVIL SERVICES
+   ("subjectType": "gs")
+───────────────────────────────────────────────────────────────
+Chapter spine
+  def / concept → constitutional or legal basis (article, act, section)
+  → timeline of evolution → structure as tree (bodies, tiers,
+  composition) → data in stats and tables → committees and reports →
+  cmp (arguments for / against) → latest (current status, amendments,
+  scheme figures) → qa (prelims-style) → recap
+
+Block mix
+• <ul class="timeline"> carries history, amendments, and the sequence
+  of committees — the single most useful block for this subject.
+• <div class="latest"> is mandatory in most chapters: current scheme
+  outlay, latest census/survey figure, the amendment in force, dated.
+• <div class="cmp"> for the two-sided debates mains answers need.
+• Tables for article numbers, schedules, comparative federal features,
+  index rankings with the publishing body.
+
+Rules
+• Cite the exact article, section, act name and year every time.
+• Attach the source and year to every statistic (NSSO, NFHS-5, Economic
+  Survey 2023-24). A number without its source is unusable.
+• Keep prelims facts (who, when, which body) separate from mains
+  arguments (why, so what) — flag the second with a box-teal callout.
+• Neutral register on contested policy: give the positions and the
+  evidence each side cites, not a verdict.
+• Recap bullets: article or act numbers, years, committee names and
+  the latest figure with its source.
+</script>
+<script type="text/plain" id="pf-cs">
+───────────────────────────────────────────────────────────────
+9. SUBJECT PROFILE — ENGINEERING / COMPUTER SCIENCE
+   ("subjectType": "cs")
+───────────────────────────────────────────────────────────────
+Chapter spine
+  def → where it is used → algorithm or procedure as steps →
+  <div class="code"> pseudocode → complexity/parameters table →
+  worked trace as an example → cmp (trade-offs) → warn (failure modes,
+  edge cases) → latest (current standard, version, adoption) → qa
+
+Block mix
+• <div class="code"> for pseudocode, syntax, config, and protocol
+  frames. Keep lines under about 70 characters — it does not scroll.
+• <ol class="steps"> for the algorithm in words before the code.
+• Tables for complexity: operation, best, average, worst, space.
+• <div class="stats"> for standard parameters — block size, key length,
+  default port, word size.
+• <div class="flow"> for pipelines, layers, request lifecycles, state
+  machines.
+
+Rules
+• Give complexity in Θ/O with the cost model stated.
+• Name the standard and version (IEEE 754, RFC 793, POSIX.1-2017).
+• Every algorithm gets one full worked trace on a small input.
+• State the failure mode and the assumption that breaks it.
+• Recap bullets: complexity, the standard's name and version, and
+  the failure mode.
+</script>
+<script type="text/plain" id="pf-other">
+───────────────────────────────────────────────────────────────
+9. SUBJECT PROFILE — GENERAL / MIXED SOURCE
+───────────────────────────────────────────────────────────────
+No subject template is imposed. Read the source material or topic
+first, then decide the chapter spine from what the content actually is:
+
+• Descriptive subject (history, geography, management) — lean on
+  timeline, tree, cmp, tables and latest.
+• Quantitative subject (economics, statistics, finance) — lean on
+  formula, deriv, stats and worked examples.
+• Procedural subject (law, accounting, operations) — lean on steps,
+  code, warn and qa.
+
+State your chosen spine implicitly through consistent structure across
+chapters. Whatever the subject, keep the non-negotiables: exact
+figures with units, named sources and dates, complete classifications,
+explicit exceptions, and 6–10 blocks per chapter.
+</script>
+<script type="text/plain" id="prompt-task">
+───────────────────────────────────────────────────────────────
+10. YOUR TASK
+───────────────────────────────────────────────────────────────
+Topic or source        : <<< paste the topic, syllabus unit, or the full source text here >>>
+Exam / level           : <<< e.g. NEET, JEE Advanced, UPSC CSE, ICAR-JRF, B.V.Sc. semester 5 >>>
+Part number            : 1
+Chapters wanted        : as many as the material needs — no cap
+Anything to emphasise  : <<< optional: previous-year weightage, weak areas, a chapter list >>>
+
+If a source text is supplied: rebuild it under section 5. Mirror its
+content completely — every term, number, name, list item and exception
+— while restructuring it by concept and converting its prose into
+blocks. Mirror what it says, not how it says it. Complete its gaps from
+your own knowledge. Nothing in it may be dropped as minor.
+
+If only a topic is supplied: cover the standard syllabus for the exam
+named above, to the same depth.
+
+Let the count of chapters follow the count of concepts. Where the
+source or syllabus holds more than 20 topics, write more than 20
+chapters — do not compress the extra topics into the ones you have,
+and do not stop at a round number. If one part would grow unwieldy,
+split the book by concept into consecutive parts and generate them one
+file per response: this part first, the next part when asked. Nothing
+is merged away or dropped to hit a chapter count.
+
+Return the JSON file now, and nothing else.
+</script>
+<script type="application/json" id="sample-json">
+{
+  "part": 99,
+  "subject": "Study Book Reference",
+  "title": "Block Gallery",
+  "subtitle": "Every note block the generator can render",
+  "badge": "Reference · Authoring Guide",
+  "coverSub": "A live specimen sheet of every content block available to note authors — definitions, formula cards, data tiles, process spines, classification trees, timelines, status panels, exam questions and comparison layouts, each shown with the markup that produces it.",
+  "tags": [
+    "Blocks",
+    "Reference",
+    "Authoring",
+    "Formula",
+    "Timeline",
+    "Flow",
+    "Tree",
+    "Stats"
+  ],
+  "source": "Study Book generator — built-in sample",
+  "subjectType": "other",
+  "toc": [
+    {
+      "num": "01",
+      "title": "Definitions, Formulas and Data"
+    },
+    {
+      "num": "02",
+      "title": "Process, Structure and Status"
+    }
+  ],
+  "chapters": [
+    {
+      "num": "01",
+      "title": "Definitions, Formulas and Data",
+      "html": "<p>This chapter is a specimen sheet. Every block below is real markup rendered by the generator, so you can judge weight, colour and spacing before authoring a full part. Terms such as <span class=\"kw\">definition block</span> and <span class=\"kw kw-t\">formula card</span> use the keyword pill in two of its five colours.</p>\n\n<div class=\"def\"><span class=\"def-term\">Definition block</span><p>An opening statement set on tinted stock with a heavy accent rule, used for the one sentence a reader must be able to reproduce verbatim in an exam.</p></div>\n\n<h3>Formula cards <span class=\"exam\">EXAM HOT</span></h3>\n<p>Each formula gets its own card, tagged with an equation number or the name of the law, and closed with a legend so no symbol is left undefined.</p>\n\n<div class=\"formula\"><span class=\"f-tag\">Eq 1.1</span>\n<div class=\"f-eq\">DCP % = (CP<sub>intake</sub> &minus; CP<sub>faeces</sub>) / CP<sub>intake</sub> &times; 100 <span class=\"u\">%</span></div>\n<div class=\"f-eq\">[F] = M L T<sup>&minus;2</sup></div>\n<ul class=\"f-where\">\n<li><b>CP</b> crude protein &mdash; g</li>\n<li><b>DCP</b> digestible crude protein &mdash; %</li>\n<li><b>F</b> force &mdash; N</li>\n</ul></div>\n\n<h4>Derivation</h4>\n<ol class=\"deriv\">\n<li><span class=\"d-l\">x&sup2; + 2x = 3</span><span class=\"d-r\">given</span></li>\n<li><span class=\"d-l\">(x + 1)&sup2; = 4</span><span class=\"d-r\">complete the square</span></li>\n<li><span class=\"d-l\">x = 1 or x = &minus;3</span><span class=\"d-r\">take roots</span></li>\n</ol>\n\n<h3>Numbers at a glance</h3>\n<div class=\"stats\">\n<div class=\"stat\"><b>540+</b><span>ingredients defined, 1985</span></div>\n<div class=\"stat a-teal\"><b>2&ndash;3 mm</b><span>optimal pellet diameter</span></div>\n<div class=\"stat a-ruby\"><b>20 ppb</b><span>aflatoxin action level</span></div>\n<div class=\"stat a-indigo\"><b>16&ndash;17 %</b><span>moisture after conditioning</span></div>\n</div>\n\n<div class=\"tbl\"><table class=\"tbl-teal\">\n<thead><tr><th>Header colour</th><th>Class</th><th>Typical use</th></tr></thead>\n<tbody>\n<tr><td>Gold</td><td>tbl-gold</td><td>Chronologies, ingredient lists</td></tr>\n<tr><td>Teal</td><td>tbl-teal</td><td>Character comparisons</td></tr>\n<tr><td>Indigo</td><td>tbl-indigo</td><td>Parameters and specifications</td></tr>\n<tr><td>Ruby</td><td>tbl-ruby</td><td>Toxicity, limits, contraindications</td></tr>\n</tbody></table></div>\n\n<div class=\"eg\"><div class=\"eg-label\">Worked example</div><p>A 3 mm screen at 3600 rpm gives a geometric mean diameter near 720 &micro;m, which is inside the 600&ndash;800 &micro;m window preferred for broiler mash.</p></div>\n\n<div class=\"warn\"><b>Common mistake</b><p>Aflatoxin B1 is produced by <em>Aspergillus flavus</em>, not by <em>Penicillium</em> &mdash; that genus produces ochratoxin A.</p></div>\n\n<div class=\"memory\"><div class=\"memory-label\">Chapter recap</div>\n<ul>\n<li><strong>def</strong> carries the one sentence a reader must reproduce verbatim.</li>\n<li><strong>formula</strong> needs three parts: the f-tag, the f-eq line, and the f-where legend.</li>\n<li><strong>stats</strong> tiles hold the headline figures &mdash; 540+, 20 ppb, 2&ndash;3 mm.</li>\n<li><strong>deriv</strong> pairs each line of algebra with its justification on the right.</li>\n<li><strong>Mnemonic</strong> &mdash; &ldquo;King Philip Came Over For Good Soup&rdquo; = Kingdom, Phylum, Class, Order, Family, Genus, Species.</li>\n</ul></div>"
+    },
+    {
+      "num": "02",
+      "title": "Process, Structure and Status",
+      "html": "<p>The second half of the gallery covers sequence, hierarchy and currency &mdash; the blocks that carry <span class=\"kw kw-i\">mechanism</span>, <span class=\"kw kw-s\">classification</span> and <span class=\"kw kw-r\">live figures</span>.</p>\n\n<h3>Mechanism as steps</h3>\n<ol class=\"steps\">\n<li><b>Conditioning</b>Steam at 80&ndash;85 &deg;C for 30&ndash;45 s raises mash moisture to 16&ndash;17 % and gelatinises surface starch.</li>\n<li><b>Extrusion</b>The mash is forced through a ring die at 40&ndash;60 bar; friction lifts the temperature a further 10&ndash;15 &deg;C.</li>\n<li><b>Cooling</b>Counter-flow air returns the pellet to ambient +5 &deg;C and to 12 % moisture for safe storage.</li>\n</ol>\n\n<div class=\"flow\">\n<div class=\"fn fn-a\">Whole grain<small>as received</small></div>\n<div class=\"fa\">&rarr;</div>\n<div class=\"fn\">Hammer mill<small>3 mm screen</small></div>\n<div class=\"fa\">&rarr;</div>\n<div class=\"fn\">Mixer<small>180 s</small></div>\n<div class=\"fa\">&rarr;</div>\n<div class=\"fn fn-x\">Pellet<small>4 mm</small></div>\n</div>\n\n<h3>Classification tree</h3>\n<ul class=\"tree\">\n<li><b>Feed processing</b>\n<ul>\n<li>Physical <em>&mdash; grinding, pelleting, extrusion</em></li>\n<li>Chemical <em>&mdash; urea ammoniation, alkali treatment</em>\n<ul><li>Alkali <em>&mdash; NaOH, Ca(OH)&#8322;</em></li><li>Acid <em>&mdash; propionic acid preservation</em></li></ul>\n</li>\n<li>Biological <em>&mdash; ensiling, enzyme and fungal treatment</em></li>\n</ul>\n</li>\n</ul>\n\n<div class=\"cmp\">\n<div class=\"up\"><b>Advantages</b><ul><li>Prevents selective feeding</li><li>Improves bulk density and flow</li><li>Destroys pathogens by heat</li></ul></div>\n<div class=\"down\"><b>Limitations</b><ul><li>High energy cost per tonne</li><li>Vitamin loss during conditioning</li><li>Capital-intensive plant</li></ul></div>\n</div>\n\n<h3>Chronology</h3>\n<ul class=\"timeline\">\n<li><span class=\"t-when\">1875</span>First continuously operating calf-meal plant, Illinois.</li>\n<li><span class=\"t-when\">1909</span>AAFCO established; ingredient definitions begin.</li>\n<li><span class=\"t-when\">1969</span>Definitions reach 440 official ingredients.</li>\n</ul>\n\n<div class=\"latest\"><div class=\"latest-head\"><b>Current status</b><span class=\"as-of\">as of 2024</span></div><p>Indian compound feed output is roughly 42 million t per year, growing 8&ndash;9 % annually. Always date this block so the reader can judge how fresh the figure is.</p></div>\n\n<div class=\"qa\">\n<p class=\"q\">Which mycotoxin is regulated at 20 ppb in dairy feed, and by which agency?</p>\n<p class=\"a\">Aflatoxin B1 &mdash; FDA action level 20 ppb; the EU limit is stricter at 5 ppb.<span class=\"qa-src\">Previous year &middot; 2019</span></p>\n</div>\n\n<div class=\"g2\">\n<div class=\"box box-gold\"><div class=\"box-label\">Key point</div><p>Callout boxes come in gold, teal, sage, ruby and indigo.</p></div>\n<div class=\"box box-teal\"><div class=\"box-label\">Note</div><p>Two boxes side by side sit inside a <b>g2</b> grid.</p></div>\n</div>\n\n<div class=\"code\">for each ingredient in batch:\n    weigh(ingredient)          # &plusmn;0.5 % tolerance\n    if ingredient.is_micro:\n        premix(ingredient, carrier)\nmix(180)                       # seconds</div>\n\n<ul class=\"chips\"><li>Pelleting</li><li>Conditioning</li><li>Die ratio</li><li>PDI</li><li>Fines</li></ul>\n\n<ul class=\"facts\"><li>Fact lists carry ruled one-liners.</li><li>Use them where a table would be overkill.</li></ul>\n\n<div class=\"memory\"><div class=\"memory-label\">Chapter recap</div>\n<ul>\n<li><strong>steps</strong> numbers a mechanism; the leading bold word names the step.</li>\n<li><strong>flow</strong> chains 3&ndash;7 nodes; add <em>flow-v</em> to run it vertically.</li>\n<li><strong>tree</strong> nests two or three levels for any &ldquo;types of&rdquo; content.</li>\n<li><strong>latest</strong> must always be dated in its as-of span.</li>\n<li><strong>Every chapter</strong> ends with this block &mdash; 5&ndash;8 recap bullets, always last.</li>\n</ul></div>"
+    }
+  ],
+  "quickRevision": {
+    "title": "⚡ Block Gallery — Quick Reference",
+    "items": [
+      "<strong>def</strong> = definition block, tinted with an accent rule",
+      "<strong>formula</strong> = equation card with <em>f-tag</em>, <em>f-eq</em> and <em>f-where</em> legend",
+      "<strong>deriv</strong> = two-column derivation, algebra left, reason right",
+      "<strong>stats</strong> = grid of number tiles; add <em>a-teal</em>, <em>a-ruby</em>, <em>a-indigo</em>",
+      "<strong>steps</strong> = numbered process spine with a connecting rule",
+      "<strong>flow</strong> = node diagram; add <em>flow-v</em> for vertical",
+      "<strong>tree</strong> = nested classification with elbow connectors",
+      "<strong>timeline</strong> = dated chronology on a spine",
+      "<strong>latest</strong> = current-status panel, always dated",
+      "<strong>qa</strong> = exam question and answer with source",
+      "<strong>warn</strong> = caution and common-mistake panel",
+      "<strong>cmp</strong> = advantages against limitations",
+      "<strong>code</strong> = fixed-pitch block for pseudocode and reactions",
+      "<strong>chips</strong> = compact keyword row",
+      "<strong>box</strong> = callout in five colours; pair inside <em>g2</em>",
+      "<strong>memory</strong> = chapter recap panel, 5&ndash;8 bullets, closes every chapter",
+      "<strong>eg</strong> = worked example with a dashed margin rule",
+      "<strong>tbl</strong> = table; header colours <em>tbl-gold</em>, <em>tbl-teal</em>, <em>tbl-indigo</em>, <em>tbl-ruby</em>",
+      "<strong>kw</strong> = keyword pill in gold, teal, ruby, slate and indigo",
+      "<strong>exam</strong> = EXAM HOT flag, toggleable at print time"
+    ]
+  }
+}
+</script>
+<script>
+/* ============================================================
+   Study Book generator
+   Rebuilds the exact page architecture of the source PDF:
+   cover -> contents -> [part divider -> chapters -> quick revision] x n
+   ============================================================ */
+(function(){
+  "use strict";
+
+  var parts = [];                       // loaded part objects, ordered
+  var $ = function(id){ return document.getElementById(id); };
+
+  /* ---------- helpers ---------- */
+  var ROMAN = [[1000,'M'],[900,'CM'],[500,'D'],[400,'CD'],[100,'C'],[90,'XC'],
+               [50,'L'],[40,'XL'],[10,'X'],[9,'IX'],[5,'V'],[4,'IV'],[1,'I']];
+  function roman(n){
+    var out = '';
+    ROMAN.forEach(function(p){ while(n >= p[0]){ out += p[1]; n -= p[0]; } });
+    return out || '0';
+  }
+  function esc(s){
+    return String(s == null ? '' : s).replace(/[&<>"]/g, function(c){
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];
+    });
+  }
+  function pad2(n){ return String(n).length < 2 ? '0' + n : String(n); }
+
+  /* Source files sometimes store num as "Chapter 01" and sometimes as "01".
+     Strip any leading "Chapter"/"Ch." word so the label is never doubled. */
+  function chapterNum(c, j){
+    var raw = String((c && c.num != null ? c.num : '')).trim();
+    raw = raw.replace(/^(chapters?|chap|ch)\s*[.:\-\u2013]?\s*/i, '').trim();
+    return raw || pad2(j + 1);
+  }
+
+  /* Splits a leading emoji off a heading, e.g. "⚡ Master Quick Revision" */
+  function splitIcon(text){
+    var m = String(text || '').match(/^\s*([\u2190-\u2BFF\uD800-\uDFFF\uFE0F\u200D]+)\s*(.*)$/);
+    return m ? { icon:m[1], text:m[2] } : { icon:'', text:String(text || '') };
+  }
+
+  /* ---------- file intake ---------- */
+  function readFiles(list){
+    var pending = list.length;
+    if(!pending) return;
+    Array.prototype.forEach.call(list, function(f){
+      var r = new FileReader();
+      r.onload = function(){
+        try{
+          var d = JSON.parse(r.result);
+          if(!d.chapters || !d.chapters.length) throw new Error('no chapters');
+          d.__file = f.name;
+          parts = parts.filter(function(p){ return p.part !== d.part || p.subject !== d.subject; });
+          parts.push(d);
+        }catch(err){
+          alert('Could not read "' + f.name + '" — it is not a study-book JSON file.');
+        }
+        if(--pending === 0){ sortParts(); refresh(); }
+      };
+      r.onerror = function(){ if(--pending === 0){ sortParts(); refresh(); } };
+      r.readAsText(f);
+    });
+  }
+  function sortParts(){
+    parts.sort(function(a,b){ return (a.part||0) - (b.part||0); });
+  }
+
+  /* ---------- rail rendering ---------- */
+  function renderRail(){
+    var box = $('parts');
+    if(!parts.length){ box.innerHTML = '<p class="empty">Nothing loaded yet.</p>'; }
+    else{
+      box.innerHTML = parts.map(function(p,i){
+        return '<div class="part">' +
+          '<span class="n">' + pad2(p.part || i+1) + '</span>' +
+          '<span class="t" title="' + esc(p.subtitle || p.title) + '">' + esc(p.subtitle || p.title) + '</span>' +
+          '<span class="c">' + p.chapters.length + ' ch</span>' +
+          '<button data-i="' + i + '" title="Remove">&times;</button></div>';
+      }).join('');
+      Array.prototype.forEach.call(box.querySelectorAll('button'), function(b){
+        b.onclick = function(){ parts.splice(+b.dataset.i, 1); refresh(); };
+      });
+    }
+    var sel = $('opt-blurb'), keep = sel.value;
+    sel.innerHTML = parts.map(function(p,i){
+      return '<option value="' + i + '">Part ' + (p.part || i+1) + ' — ' + esc(p.subtitle || p.title) + '</option>';
+    }).join('') || '<option>—</option>';
+    if(keep && sel.querySelector('option[value="' + keep + '"]')) sel.value = keep;
+
+    var on = parts.length > 0;
+    $('print').disabled = !on;
+    $('export').disabled = !on;
+    $('blank').style.display = on ? 'none' : '';
+  }
+
+  /* ---------- book sections ---------- */
+  function coverHTML(){
+    var first = parts[0];
+    var bi = Math.min(parts.length - 1, Math.max(0, parseInt($('opt-blurb').value, 10) || 0));
+    var blurb = parts[bi].coverSub || first.coverSub || '';
+    var title = $('opt-title').value.trim() || first.title || first.subject || 'Study Book';
+    var chapters = parts.reduce(function(n,p){ return n + p.chapters.length; }, 0);
+    var subjects = {}; parts.forEach(function(p){ subjects[p.subject || ''] = 1; });
+    var nSub = Object.keys(subjects).length;
+    var range = parts.length > 1
+      ? 'Parts ' + (parts[0].part || 1) + '\u2013' + (parts[parts.length-1].part || parts.length)
+      : 'Part ' + (first.part || 1);
+    var stats = [['Subjects', nSub], ['Parts', parts.length], ['Chapters', chapters],
+                 ['Edition', $('opt-edition').value.trim() || 'Extendable']];
+
+    return '<section class="cover">' +
+      '<p class="cv-eyebrow">' + esc(first.subject || title) + ' \u00b7 ' + esc(range) + '</p>' +
+      '<h1 class="cv-title">' + esc(title) + '</h1>' +
+      '<p class="cv-sub">' + esc(blurb) + '</p>' +
+      '<div class="cv-rule"></div>' +
+      '<dl class="cv-stats">' + stats.map(function(s){
+        return '<div><dt>' + esc(s[0]) + '</dt><dd>' + esc(s[1]) + '</dd></div>';
+      }).join('') + '</dl>' +
+      '<div class="cv-num" aria-hidden="true">' + roman(parts.length) + '</div>' +
+    '</section>';
+  }
+
+  function tocHTML(){
+    return '<section class="toc">' + parts.map(function(p,i){
+      var items = (p.toc && p.toc.length ? p.toc : p.chapters).map(function(c, j){
+        /* link only where a chapter actually exists to jump to */
+        var hasTarget = j < p.chapters.length;
+        var id  = chapterId(i, j);
+        var row = '<span class="num">' + esc(chapterNum(c, j)) + '</span>' +
+                  '<span class="ttl">' + esc(c.title) + '</span>' +
+                  '<span class="lead"></span>' +
+                  '<span class="pg" data-for="' + id + '"></span>';
+        return hasTarget
+          ? '<a class="toc-item" href="#' + id + '">' + row + '</a>'
+          : '<div class="toc-item">' + row + '</div>';
+      }).join('');
+      return '<div class="toc-card">' +
+        '<div class="toc-head">' +
+          '<span class="pill">Part ' + (p.part || i+1) + '</span>' +
+          '<h2>' + esc(p.subtitle || p.title) + ' (Table of Contents)</h2>' +
+          '<span class="cnt">' + p.chapters.length + ' chapters</span>' +
+        '</div>' +
+        '<div class="toc-grid">' + items + '</div>' +
+      '</div>';
+    }).join('') + '</section>';
+  }
+
+  function dividerHTML(p, i){
+    return '<section class="divider">' +
+      '<span class="dv-badge">\u25C6 Part ' + (p.part || i+1) + '</span>' +
+      '<p class="dv-subject">' + esc(p.subject || '') + '</p>' +
+      '<h1 class="dv-title">' + esc(p.subtitle || p.title) + '</h1>' +
+      (p.source ? '<p class="dv-source">' + esc(p.source) + '</p>' : '') +
+    '</section>';
+  }
+
+  function chapterId(partIndex, j){ return 'ch-' + partIndex + '-' + j; }
+
+  function chapterHTML(c, j, partIndex){
+    var showLabel = $('opt-chlabel').checked;
+    return '<section class="chapter' + (showLabel ? '' : ' no-kicker') + '"' +
+           ' id="' + chapterId(partIndex, j) + '">' +
+      (showLabel
+        ? '<div class="ch-head">' +
+            '<span class="ch-kicker">Chapter ' + esc(chapterNum(c, j)) + '</span>' +
+            '<span class="rule"></span>' +
+          '</div>'
+        : '') +
+      '<h1 class="ch-title">' + esc(c.title) + '</h1>' +
+      '<div class="ch-rule"></div>' +
+      '<div class="ch-body">' + (c.html || '') + '</div>' +
+    '</section>';
+  }
+
+  function qrHTML(q){
+    if(!q || !q.items || !q.items.length) return '';
+    var h = splitIcon(q.title || 'Quick Revision');
+    return '<section class="qr">' +
+      '<div class="qr-head">' +
+        (h.icon ? '<span class="bolt">' + h.icon + '</span>' : '') +
+        '<h2>' + esc(h.text) + '</h2><span class="rule"></span>' +
+      '</div>' +
+      '<ol class="qr-list">' + q.items.map(function(t){ return '<li>' + t + '</li>'; }).join('') + '</ol>' +
+    '</section>';
+  }
+
+  /* ---------- compose ---------- */
+  function buildBook(){
+    if(!parts.length) return '';
+    var out = [];
+    if($('opt-cover').checked) out.push(coverHTML());
+    if($('opt-toc').checked)   out.push(tocHTML());
+    parts.forEach(function(p, i){
+      if($('opt-div').checked) out.push(dividerHTML(p, i));
+      p.chapters.forEach(function(c, j){ out.push(chapterHTML(c, j, i)); });
+      if($('opt-qr').checked)  out.push(qrHTML(p.quickRevision));
+    });
+    return out.join('\n');
+  }
+
+  /* A table whose min-content width beats the page box will run off the sheet and
+     get clipped in the PDF. Measure each one and step its density down until it fits. */
+  function fitTables(){
+    var boxes = [];
+    Array.prototype.forEach.call($('book').querySelectorAll('.tbl'), function(box){
+      var t = box.querySelector('table');
+      if(!t) return;
+      box.classList.remove('fit', 'fit-x');
+      boxes.push({box:box, t:t, cols:(t.rows[0] || {cells:[]}).cells.length});
+    });
+    if(!boxes.length) return;
+
+    /* pass 1 — read every width while the layout is clean */
+    boxes.forEach(function(b){ b.over = b.t.offsetWidth > b.box.clientWidth + 1; });
+    /* pass 2 — write, cheapest step that can work */
+    var tight = [];
+    boxes.forEach(function(b){
+      if(b.over || b.cols >= 6){ b.box.classList.add('fit'); tight.push(b); }
+    });
+    if(!tight.length) return;
+    /* pass 3 — one more read, only for the tables we just touched */
+    tight.forEach(function(b){ b.still = b.t.offsetWidth > b.box.clientWidth + 1; });
+    tight.forEach(function(b){
+      if(b.still){ b.box.classList.remove('fit'); b.box.classList.add('fit-x'); }
+    });
+  }
+
+  function bookClass(){
+    var c = [];
+    if(!$('opt-exam').checked) c.push('no-exam');
+    if($('opt-2col').checked)  c.push('two-col');
+    if($('opt-rich').checked)  c.push('rich');
+    return c.join(' ');
+  }
+
+  /* ---------- contents page numbers ----------
+     The browser will not tell us where it broke the pages, so the flow is
+     replayed here against the real A4 text box: forced breaks start a page,
+     break-inside:avoid elements jump whole to the next page when they do not
+     fit, and anything taller than a page spills across several. */
+  function pageBoxPx(){
+    var probe = document.createElement('div');
+    probe.style.cssText = 'position:absolute;visibility:hidden;height:' +
+      (297 - 15.05 - 19.4).toFixed(2) + 'mm';
+    document.body.appendChild(probe);
+    var h = probe.offsetHeight;
+    probe.remove();
+    return h;
+  }
+
+  function paginate(){
+    var book = $('book');
+    var folios = book.querySelectorAll('.toc-item .pg');
+    if(!folios.length) return;
+
+    var pageH = pageBoxPx();
+    if(!pageH){ return; }
+    var bookTop = book.getBoundingClientRect().top;
+    var top = function(el){ return el.getBoundingClientRect().top - bookTop; };
+    var bottom = function(el){ return el.getBoundingClientRect().bottom - bookTop; };
+
+    var page = 0, pageStart = 0, startPage = {};
+
+    function place(el){
+      var b = bottom(el);
+      if(b - pageStart <= pageH) return;
+      var atomic = getComputedStyle(el).breakInside === 'avoid';
+      var t = top(el);
+      if(atomic && (b - t) <= pageH){ page++; pageStart = t; return; }
+      while(b - pageStart > pageH){ page++; pageStart += pageH; }
+    }
+
+    Array.prototype.forEach.call(book.children, function(sec){
+      var cls = sec.classList;
+      var forced = cls.contains('cover') || cls.contains('toc') ||
+                   cls.contains('divider') || cls.contains('chapter');
+      if(forced){ page++; pageStart = top(sec); }
+
+      if(cls.contains('cover') || cls.contains('divider')) return;   // one page each
+
+      if(cls.contains('chapter')){
+        startPage[sec.id] = page;
+        var body = sec.querySelector('.ch-body');
+        Array.prototype.forEach.call(sec.children, function(kid){
+          if(kid !== body) place(kid);
+        });
+        if(body){
+          if(book.classList.contains('two-col')){
+            place(body);            /* multicol: children no longer flow linearly */
+          }else{
+            Array.prototype.forEach.call(body.children, place);
+          }
+        }
+        return;
+      }
+      place(sec);                              /* toc, quick revision */
+    });
+
+    Array.prototype.forEach.call(folios, function(span){
+      var n = startPage[span.dataset.for];
+      span.textContent = n ? String(n) : '';
+    });
+  }
+
+  function refresh(){
+    renderRail();
+    $('book').className = bookClass();
+    $('book').innerHTML = buildBook();
+    var ch = parts.reduce(function(n,p){ return n + p.chapters.length; }, 0);
+    $('meta').textContent = parts.length
+      ? parts.length + (parts.length === 1 ? ' part' : ' parts') + ' \u00b7 ' + ch + ' chapters'
+      : 'no source files';
+    fitTables();
+    paginate();
+  }
+
+  /* ---------- standalone export ---------- */
+  function download(name, text, mime){
+    var url = URL.createObjectURL(new Blob([text], {type:(mime || 'text/plain') + ';charset=utf-8'}));
+    var a = document.createElement('a');
+    a.href = url; a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function(){ URL.revokeObjectURL(url); }, 1500);
+  }
+
+  function exportHTML(){
+    var css = Array.prototype.map.call(document.styleSheets, function(s){
+      try{ return Array.prototype.map.call(s.cssRules, function(r){ return r.cssText; }).join('\n'); }
+      catch(e){ return ''; }
+    }).join('\n');
+    var title = ($('opt-title').value.trim() || parts[0].title || 'Study Book');
+    var doc = '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">' +
+      '<title>' + esc(title) + '</title>' +
+      document.querySelector('link[href*="fonts.googleapis"]').outerHTML +
+      '<style>' + css + '\n' + fsRules($('opt-fs').value) +
+      '\nbody{background:#fff}#app{display:block;height:auto}' +
+      '#rail,#status,#blank{display:none}#canvas{overflow:visible;padding:0;background:none}' +
+      '</style></head><body><div id="canvas"><div class="sheet">' +
+      '<div id="book"' + (bookClass() ? ' class="' + bookClass() + '"' : '') + '>' +
+      $('book').innerHTML + '</div></div></div></body></html>';
+
+    var url = URL.createObjectURL(new Blob([doc], {type:'text/html'}));
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = title.replace(/[^\w\- ]+/g, '').replace(/\s+/g, '_') + '_Book.html';
+    a.click();
+    setTimeout(function(){ URL.revokeObjectURL(url); }, 4000);
+  }
+
+  /* ---------- wiring ---------- */
+  var drop = $('drop'), input = $('file');
+  drop.onclick = function(){ input.click(); };
+  drop.onkeydown = function(e){ if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); input.click(); } };
+  input.onchange = function(){ readFiles(input.files); input.value = ''; };
+  ['dragenter','dragover'].forEach(function(ev){
+    drop.addEventListener(ev, function(e){ e.preventDefault(); drop.classList.add('hot'); });
+  });
+  ['dragleave','drop'].forEach(function(ev){
+    drop.addEventListener(ev, function(e){ e.preventDefault(); drop.classList.remove('hot'); });
+  });
+  drop.addEventListener('drop', function(e){ readFiles(e.dataTransfer.files); });
+  window.addEventListener('dragover', function(e){ e.preventDefault(); });
+  window.addEventListener('drop', function(e){ e.preventDefault(); });
+
+  var refreshSoon = (function(){
+    var timer = null;
+    return function(){
+      clearTimeout(timer);
+      timer = setTimeout(refresh, 180);
+    };
+  })();
+
+  ['opt-title','opt-edition','opt-blurb','opt-cover','opt-toc','opt-div','opt-qr','opt-chlabel','opt-exam','opt-2col','opt-rich']
+    .forEach(function(id){ $(id).addEventListener('change', refresh); });
+  /* The reading size has to survive the print pipeline, so it is written into a real
+     stylesheet (not just an inline custom property) and re-declared for @media print
+     in points — printers work in physical units, px is only a 96dpi convention. */
+  function fsRules(px){
+    var pt = (parseFloat(px) * 0.75).toFixed(2) + 'pt';
+    return ':root{--fs:' + px + '}\n' +
+           '#book{font-size:' + px + '}\n' +
+           '@media print{:root{--fs:' + pt + '}#book{font-size:' + pt + ' !important}}';
+  }
+  function applyFontSize(){
+    var px = $('opt-fs').value;
+    var tag = $('fs-style');
+    if(!tag){
+      tag = document.createElement('style');
+      tag.id = 'fs-style';
+      document.head.appendChild(tag);
+    }
+    tag.textContent = fsRules(px);
+    document.documentElement.style.setProperty('--fs', px);
+    if($('book').innerHTML){ fitTables(); paginate(); }
+  }
+  $('opt-fs').addEventListener('change', applyFontSize);
+  applyFontSize();
+
+  $('opt-title').addEventListener('input', refreshSoon);
+  $('opt-edition').addEventListener('input', refreshSoon);
+
+  if(document.fonts && document.fonts.ready){
+    document.fonts.ready.then(function(){ fitTables(); paginate(); });
+  }
+  window.addEventListener('beforeprint', function(){ fitTables(); paginate(); });
+
+  /* ---------- authoring prompt ---------- */
+  var PROFILE_NAME = {
+    other:'General / mixed source', math:'Mathematics', physics:'Physics',
+    chem:'Chemistry', bio:'Biology', med:'Medical / Veterinary',
+    gs:'General studies', cs:'Engineering / Computer science'
+  };
+  function textOf(id){
+    var el = $(id);
+    return el ? el.textContent.trim() : '';
+  }
+  function buildPrompt(){
+    var key = $('opt-profile').value;
+    return [textOf('prompt-core'), textOf('pf-' + key), textOf('prompt-task')]
+             .filter(Boolean).join('\n\n');
+  }
+  function showPrompt(){
+    $('prompt-text').value = buildPrompt();
+    $('modal-sub').textContent = PROFILE_NAME[$('opt-profile').value] || '';
+    $('prompt-note').textContent = 'Paste into any AI, add your topic, drop the JSON back here.';
+    $('modal').classList.add('on');
+  }
+  function hidePrompt(){ $('modal').classList.remove('on'); }
+
+  $('prompt-open').onclick = showPrompt;
+  $('modal-x').onclick = hidePrompt;
+  $('modal').addEventListener('click', function(e){ if(e.target === $('modal')) hidePrompt(); });
+  document.addEventListener('keydown', function(e){
+    if(e.key === 'Escape' && $('modal').classList.contains('on')) hidePrompt();
+  });
+  $('opt-profile').addEventListener('change', function(){
+    if($('modal').classList.contains('on')) showPrompt();
+  });
+
+  $('prompt-copy').onclick = function(){
+    var box = $('prompt-text');
+    var done = function(){ $('prompt-note').textContent = 'Prompt copied to the clipboard.'; };
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(box.value).then(done, function(){ box.select(); });
+    }else{
+      box.select(); document.execCommand('copy'); done();
+    }
+  };
+  $('prompt-dl').onclick = function(){
+    var key = $('opt-profile').value;
+    download('studybook-authoring-prompt-' + key + '.md', buildPrompt(), 'text/markdown');
+    $('prompt-note').textContent = 'Prompt downloaded as Markdown.';
+  };
+
+  /* ---------- built-in block gallery ---------- */
+  $('sample-load').onclick = function(){
+    try{
+      var d = JSON.parse(textOf('sample-json'));
+      d.__file = 'block-gallery.json';
+      parts = parts.filter(function(x){ return x.part !== d.part; });
+      parts.push(d);
+      sortParts();
+      refresh();
+    }catch(err){
+      alert('The built-in sample could not be loaded.');
+    }
+  };
+
+  $('print').onclick = function(){ window.print(); };
+  $('export').onclick = exportHTML;
+
+  refresh();
+})();
+</script>
+
+</body>
+</html>
